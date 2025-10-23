@@ -1,0 +1,446 @@
+{
+  "name": "SBS Telegram Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ]
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [250, 400],
+      "webhookId": "sbs-telegram-bot",
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.message.text }}",
+              "operation": "startsWith",
+              "value2": "/complete"
+            }
+          ]
+        }
+      },
+      "id": "route-command",
+      "name": "Route Command",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.message.text }}",
+                    "operation": "startsWith",
+                    "value2": "/complete"
+                  }
+                ]
+              },
+              "renameOutput": "Complete"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.message.text }}",
+                    "operation": "startsWith",
+                    "value2": "/skip"
+                  }
+                ]
+              },
+              "renameOutput": "Skip"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.message.text }}",
+                    "operation": "startsWith",
+                    "value2": "/advance"
+                  }
+                ]
+              },
+              "renameOutput": "Advance"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.message.text }}",
+                    "operation": "startsWith",
+                    "value2": "/status"
+                  }
+                ]
+              },
+              "renameOutput": "Status"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.message.text }}",
+                    "operation": "startsWith",
+                    "value2": "/help"
+                  }
+                ]
+              },
+              "renameOutput": "Help"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (system_id, event, details)\nSELECT \n  system_id,\n  'routine_completed',\n  jsonb_build_object(\n    'routine_id', $1,\n    'completed_at', NOW(),\n    'completed_by', 'telegram_bot'\n  )\nFROM routines\nWHERE id = $1\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [$json.message.text.split(' ')[1]] }}"
+        }
+      },
+      "id": "complete-routine",
+      "name": "Complete Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 150],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "=✅ *Routine Completed!*\n\nGreat work! Your routine has been marked as complete.\n\n🎯 Keep up the momentum!",
+        "additionalFields": {
+          "parseMode": "Markdown",
+          "replyToMessageId": "={{ $json.message.message_id }}"
+        }
+      },
+      "id": "complete-response",
+      "name": "Send Complete Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [850, 150],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (system_id, event, details)\nSELECT \n  system_id,\n  'routine_skipped',\n  jsonb_build_object(\n    'routine_id', $1,\n    'skipped_at', NOW(),\n    'reason', 'user_request'\n  )\nFROM routines\nWHERE id = $1\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [$json.message.text.split(' ')[1]] }}"
+        }
+      },
+      "id": "skip-routine",
+      "name": "Skip Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "=⏭️ *Routine Skipped*\n\nNo problem! This routine has been skipped for today.\n\n💡 You'll get a reminder next time it's scheduled.",
+        "additionalFields": {
+          "parseMode": "Markdown",
+          "replyToMessageId": "={{ $json.message.message_id }}"
+        }
+      },
+      "id": "skip-response",
+      "name": "Send Skip Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/sbs-system-update",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.message.text.split(' ')[1] }}"
+            },
+            {
+              "name": "action",
+              "value": "advance_stage"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "advance-system",
+      "name": "Advance System Stage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 450]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "=🚀 *System Stage Advanced!*\n\nYour system has been moved to the next stage in its lifecycle.\n\nCheck the orchestrator for next steps!",
+        "additionalFields": {
+          "parseMode": "Markdown",
+          "replyToMessageId": "={{ $json.message.message_id }}"
+        }
+      },
+      "id": "advance-response",
+      "name": "Send Advance Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [850, 450],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  s.id,\n  s.name,\n  s.category,\n  s.current_stage,\n  COUNT(DISTINCT ss.id) FILTER (WHERE ss.status = 'complete') as completed_steps,\n  COUNT(DISTINCT ss.id) as total_steps,\n  COUNT(DISTINCT r.id) as active_routines,\n  MAX(sl.created_at) as last_activity\nFROM systems s\nLEFT JOIN system_steps ss ON s.id = ss.system_id\nLEFT JOIN routines r ON s.id = r.system_id AND r.status = 'active'\nLEFT JOIN system_logs sl ON s.id = sl.system_id\nWHERE s.current_stage != 'complete'\nGROUP BY s.id, s.name, s.category, s.current_stage\nORDER BY last_activity DESC\nLIMIT 10;",
+        "additionalFields": {}
+      },
+      "id": "get-system-status",
+      "name": "Get System Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const systems = $input.all();\nlet message = '📊 *SBS System Status*\\n\\n';\n\nif (systems.length === 0) {\n  message += 'No active systems found.\\n\\nCreate your first system to get started!';\n} else {\n  systems.forEach((item, index) => {\n    const s = item.json;\n    const progress = Math.round((s.completed_steps / s.total_steps) * 100);\n    message += `${index + 1}. *${s.name}*\\n`;\n    message += `   📁 ${s.category}\\n`;\n    message += `   ⚙️ Stage: ${s.current_stage}\\n`;\n    message += `   📈 Progress: ${progress}% (${s.completed_steps}/${s.total_steps})\\n`;\n    message += `   🔄 Active Routines: ${s.active_routines}\\n`;\n    message += `\\n`;\n  });\n}\n\nreturn [{ json: { message } }];"
+      },
+      "id": "format-status-message",
+      "name": "Format Status Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 600]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "parseMode": "Markdown",
+          "replyToMessageId": "={{ $('Telegram Trigger').item.json.message.message_id }}"
+        }
+      },
+      "id": "status-response",
+      "name": "Send Status Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1050, 600],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "=🤖 *SBS Telegram Bot Commands*\n\n*Routine Management:*\n`/complete [routine_id]` - Mark routine as complete\n`/skip [routine_id]` - Skip today's routine\n\n*System Management:*\n`/advance [system_id]` - Move system to next stage\n`/status` - View all active systems\n\n*Information:*\n`/help` - Show this help message\n\n*Quick Tip:* Use the routine_id from daily reminders to quickly complete or skip tasks!",
+        "additionalFields": {
+          "parseMode": "Markdown",
+          "replyToMessageId": "={{ $json.message.message_id }}"
+        }
+      },
+      "id": "help-response",
+      "name": "Send Help Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [650, 750],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "=❓ *Unknown Command*\n\nI didn't recognize that command.\n\nUse `/help` to see available commands.",
+        "additionalFields": {
+          "parseMode": "Markdown",
+          "replyToMessageId": "={{ $json.message.message_id }}"
+        }
+      },
+      "id": "default-response",
+      "name": "Send Default Response",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [650, 900],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Route Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Command": {
+      "main": [
+        [
+          {
+            "node": "Complete Routine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Routine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Advance System Stage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get System Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Default Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Routine": {
+      "main": [
+        [
+          {
+            "node": "Send Complete Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Routine": {
+      "main": [
+        [
+          {
+            "node": "Send Skip Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Advance System Stage": {
+      "main": [
+        [
+          {
+            "node": "Send Advance Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get System Status": {
+      "main": [
+        [
+          {
+            "node": "Format Status Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Status Message": {
+      "main": [
+        [
+          {
+            "node": "Send Status Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "tags": []
+}

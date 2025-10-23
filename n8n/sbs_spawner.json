@@ -1,0 +1,237 @@
+{
+  "name": "SBS System Spawner",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sbs-system-created",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-new-system",
+      "name": "Webhook - New System Created",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sbs-system-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_steps (system_id, step, status, notes) VALUES\n($1, 'define', 'complete', 'System creation completed'),\n($1, 'design', 'pending', 'Design system architecture'),\n($1, 'build', 'pending', 'Build working components'),\n($1, 'automate', 'pending', 'Add triggers and schedules'),\n($1, 'review', 'pending', 'Schedule review cycle')\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [\n  $json.body.system_id\n] }}"
+        }
+      },
+      "id": "insert-lifecycle-steps",
+      "name": "Insert Lifecycle Steps",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO routines (name, system_id, day_of_week, description, status)\nSELECT \n  $1 || ' - ' || day,\n  $2,\n  day,\n  'Auto-generated routine for ' || $1,\n  'active'\nFROM unnest(ARRAY['Monday', 'Friday']) AS day\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [\n  $json.body.name,\n  $json.body.system_id\n] }}"
+        }
+      },
+      "id": "create-default-routines",
+      "name": "Create Default Routines",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE systems \nSET current_stage = 'design',\n    metadata = jsonb_set(\n      COALESCE(metadata, '{}'::jsonb),\n      '{spawned_at}',\n      to_jsonb(NOW())\n    )\nWHERE id = $1\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [$json.body.system_id] }}"
+        }
+      },
+      "id": "advance-to-design",
+      "name": "Advance Stage to Design",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (system_id, event, details)\nVALUES ($1, 'system_spawned', jsonb_build_object(\n  'name', $2,\n  'category', $3,\n  'timestamp', NOW()\n))\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [\n  $json.body.system_id,\n  $json.body.name,\n  $json.body.category\n] }}"
+        }
+      },
+      "id": "log-spawn-event",
+      "name": "Log System Spawn Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🎉 *New System Created*\n\n📋 *Name:* {{ $json.body.name }}\n🗂️ *Category:* {{ $json.body.category }}\n🎯 *Purpose:* {{ $json.body.purpose }}\n\n✅ Lifecycle steps initialized\n📅 Default routines created\n🚀 Stage advanced to: *Design*\n\n*Next Step:* Define your system architecture and data flows.",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "send-telegram-notification",
+      "name": "Send Telegram Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"system_id\": $json.body.system_id,\n  \"message\": \"System spawned successfully\",\n  \"next_stage\": \"design\"\n} }}",
+        "options": {
+          "responseCode": 201
+        }
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.system_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "validate-input",
+      "name": "Validate System ID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 150]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Missing required field: system_id\"\n} }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 50]
+    }
+  ],
+  "connections": {
+    "Webhook - New System Created": {
+      "main": [
+        [
+          {
+            "node": "Insert Lifecycle Steps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Lifecycle Steps": {
+      "main": [
+        [
+          {
+            "node": "Create Default Routines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Default Routines": {
+      "main": [
+        [
+          {
+            "node": "Advance Stage to Design",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Advance Stage to Design": {
+      "main": [
+        [
+          {
+            "node": "Log System Spawn Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System Spawn Event": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "tags": []
+}

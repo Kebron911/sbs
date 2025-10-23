@@ -1,0 +1,303 @@
+{
+  "name": "SBS PostgreSQL Event Listener",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sbs-pg-notify",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-pg-notify",
+      "name": "Webhook - PostgreSQL Notify",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400],
+      "webhookId": "sbs-pg-notify"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the PostgreSQL NOTIFY payload\nconst payload = $input.first().json.body;\nlet parsedData;\n\nif (typeof payload === 'string') {\n  try {\n    parsedData = JSON.parse(payload);\n  } catch (e) {\n    parsedData = { raw: payload };\n  }\n} else {\n  parsedData = payload;\n}\n\nreturn [{ json: parsedData }];"
+      },
+      "id": "parse-notify-payload",
+      "name": "Parse NOTIFY Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.current_stage }}",
+              "value2": "define"
+            }
+          ]
+        }
+      },
+      "id": "check-stage",
+      "name": "Route Based on Stage",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [650, 400],
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.current_stage }}",
+                    "value2": "define"
+                  }
+                ]
+              },
+              "renameOutput": "New System (Define)"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.current_stage }}",
+                    "operation": "notEqual",
+                    "value2": "define"
+                  },
+                  {
+                    "value1": "={{ $json.current_stage }}",
+                    "operation": "notEqual",
+                    "value2": "complete"
+                  }
+                ]
+              },
+              "renameOutput": "Stage Update"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.current_stage }}",
+                    "value2": "complete"
+                  }
+                ]
+              },
+              "renameOutput": "System Complete"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/sbs-system-created",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.name }}"
+            },
+            {
+              "name": "category",
+              "value": "={{ $json.category }}"
+            },
+            {
+              "name": "purpose",
+              "value": "={{ $json.purpose }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-spawner",
+      "name": "Trigger System Spawner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/sbs-system-update",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "current_stage",
+              "value": "={{ $json.current_stage }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-orchestrator",
+      "name": "Trigger System Orchestrator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🎊 *System Complete!*\n\n*{{ $json.name }}* has completed all lifecycle stages.\n\n✅ Define → Design → Build → Automate → Review\n\nCongratulations on building a self-sustaining system! 🚀",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "notify-complete",
+      "name": "Notify System Complete",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [850, 550],
+      "credentials": {
+        "telegramApi": {
+          "id": "2",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (system_id, event, details)\nVALUES ($1, 'system_completed', jsonb_build_object(\n  'completed_at', NOW(),\n  'total_duration_days', EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400\n))\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [$json.id] }}"
+        }
+      },
+      "id": "log-completion",
+      "name": "Log System Completion",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1050, 550],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"event\": \"system_update_processed\",\n  \"system_id\": $json.id,\n  \"stage\": $json.current_stage\n} }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Webhook - PostgreSQL Notify": {
+      "main": [
+        [
+          {
+            "node": "Parse NOTIFY Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse NOTIFY Payload": {
+      "main": [
+        [
+          {
+            "node": "Route Based on Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Based on Stage": {
+      "main": [
+        [
+          {
+            "node": "Trigger System Spawner",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trigger System Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify System Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger System Spawner": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger System Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify System Complete": {
+      "main": [
+        [
+          {
+            "node": "Log System Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System Completion": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "tags": []
+}
