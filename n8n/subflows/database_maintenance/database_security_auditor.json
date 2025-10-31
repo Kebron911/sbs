@@ -1,0 +1,282 @@
+{
+  "name": "🔒 Database Security Auditor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "db-security-auditor",
+        "options": {}
+      },
+      "id": "9bf5db23-cdaf-47e6-8d01-a180ed8a72f4",
+      "name": "Webhook - Security Auditor",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        112,
+        192
+      ],
+      "webhookId": "db-security-auditor"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- User Permissions and Role Analysis\nWITH user_privileges AS (\n  SELECT \n    grantee,\n    table_schema,\n    table_name,\n    privilege_type,\n    is_grantable\n  FROM information_schema.table_privileges \n  WHERE table_schema = 'public'\n),\nrole_info AS (\n  SELECT \n    rolname,\n    rolsuper,\n    rolinherit,\n    rolcreaterole,\n    rolcreatedb,\n    rolcanlogin,\n    rolreplication,\n    rolbypassrls,\n    rolconnlimit,\n    rolvaliduntil\n  FROM pg_roles\n  WHERE rolname NOT LIKE 'pg_%'\n),\nactive_connections AS (\n  SELECT \n    usename,\n    application_name,\n    client_addr,\n    client_hostname,\n    client_port,\n    backend_start,\n    state,\n    count(*) as connection_count\n  FROM pg_stat_activity \n  WHERE datname = current_database()\n    AND usename IS NOT NULL\n  GROUP BY usename, application_name, client_addr, client_hostname, client_port, backend_start, state\n)\nSELECT \n  'user_security_analysis' as audit_type,\n  json_build_object(\n    'user_privileges', (\n      SELECT json_agg(row_to_json(up)) FROM user_privileges up\n    ),\n    'database_roles', (\n      SELECT json_agg(row_to_json(ri)) FROM role_info ri\n    ),\n    'active_connections', (\n      SELECT json_agg(row_to_json(ac)) FROM active_connections ac\n    ),\n    'analysis_timestamp', now()\n  ) as security_data;",
+        "options": {}
+      },
+      "id": "3c1416f5-eb5a-4302-a139-345cd0d5832a",
+      "name": "Audit User Permissions",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        496,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Data Integrity and Constraint Analysis\nWITH constraint_violations AS (\n  -- Check for potential foreign key constraint violations\n  SELECT \n    'foreign_key_violations' as violation_type,\n    'characters' as table_name,\n    'user_id' as column_name,\n    count(*) as violation_count\n  FROM characters c\n  LEFT JOIN users u ON c.user_id = u.id\n  WHERE u.id IS NULL AND c.user_id IS NOT NULL\n  \n  UNION ALL\n  \n  SELECT \n    'foreign_key_violations' as violation_type,\n    'habits' as table_name,\n    'character_id' as column_name,\n    count(*) as violation_count\n  FROM habits h\n  LEFT JOIN characters c ON h.character_id = c.id\n  WHERE c.id IS NULL AND h.character_id IS NOT NULL\n  \n  UNION ALL\n  \n  SELECT \n    'foreign_key_violations' as violation_type,\n    'routines' as table_name,\n    'system_id' as column_name,\n    count(*) as violation_count\n  FROM routines r\n  LEFT JOIN systems s ON r.system_id = s.id\n  WHERE s.id IS NULL AND r.system_id IS NOT NULL\n),\ndata_quality_checks AS (\n  -- Check for data quality issues\n  SELECT \n    'duplicate_emails' as check_type,\n    'users' as table_name,\n    count(*) - count(DISTINCT email) as issue_count,\n    'Duplicate email addresses found' as description\n  FROM users\n  \n  UNION ALL\n  \n  SELECT \n    'null_required_fields' as check_type,\n    'characters' as table_name,\n    count(*) as issue_count,\n    'Characters with NULL user_id' as description\n  FROM characters\n  WHERE user_id IS NULL\n  \n  UNION ALL\n  \n  SELECT \n    'negative_values' as check_type,\n    'characters' as table_name,\n    count(*) as issue_count,\n    'Characters with negative XP or coins' as description\n  FROM characters\n  WHERE xp < 0 OR coins < 0\n  \n  UNION ALL\n  \n  SELECT \n    'future_dates' as check_type,\n    'events' as table_name,\n    count(*) as issue_count,\n    'Events with future dates' as description\n  FROM events\n  WHERE event_date > now()\n),\ntable_constraints AS (\n  SELECT \n    tc.table_name,\n    tc.constraint_name,\n    tc.constraint_type,\n    kcu.column_name,\n    CASE \n      WHEN tc.constraint_type = 'FOREIGN KEY' THEN \n        (SELECT table_name FROM information_schema.key_column_usage \n         WHERE constraint_name = rc.unique_constraint_name)\n      ELSE NULL\n    END as referenced_table\n  FROM information_schema.table_constraints tc\n  LEFT JOIN information_schema.key_column_usage kcu \n    ON tc.constraint_name = kcu.constraint_name\n  LEFT JOIN information_schema.referential_constraints rc \n    ON tc.constraint_name = rc.constraint_name\n  WHERE tc.table_schema = 'public'\n    AND tc.constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE', 'CHECK')\n)\nSELECT \n  'data_integrity_analysis' as audit_type,\n  json_build_object(\n    'constraint_violations', (\n      SELECT json_agg(row_to_json(cv)) \n      FROM constraint_violations cv \n      WHERE cv.violation_count > 0\n    ),\n    'data_quality_issues', (\n      SELECT json_agg(row_to_json(dqc)) \n      FROM data_quality_checks dqc \n      WHERE dqc.issue_count > 0\n    ),\n    'table_constraints', (\n      SELECT json_agg(row_to_json(tc)) FROM table_constraints tc\n    ),\n    'analysis_timestamp', now()\n  ) as integrity_data;",
+        "options": {}
+      },
+      "id": "728f6bd8-e695-4529-a2be-f1c52943ef05",
+      "name": "Analyze Data Integrity",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        496,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Access Pattern and Security Analysis\nWITH suspicious_activity AS (\n  -- Look for unusual access patterns in system logs\n  SELECT \n    user_id,\n    character_id,\n    event_type,\n    count(*) as event_count,\n    min(created_at) as first_occurrence,\n    max(created_at) as last_occurrence,\n    count(DISTINCT DATE(created_at)) as active_days\n  FROM system_logs\n  WHERE created_at >= now() - interval '7 days'\n    AND event_type IN ('login_attempt', 'failed_login', 'privilege_escalation', 'data_modification')\n  GROUP BY user_id, character_id, event_type\n  HAVING count(*) > 100 -- High frequency events\n),\nrecent_modifications AS (\n  -- Track recent data modifications\n  SELECT \n    'users' as table_name,\n    count(*) as modification_count,\n    max(updated_at) as last_modification\n  FROM users\n  WHERE updated_at >= now() - interval '24 hours'\n  \n  UNION ALL\n  \n  SELECT \n    'characters' as table_name,\n    count(*) as modification_count,\n    max(updated_at) as last_modification\n  FROM characters\n  WHERE updated_at >= now() - interval '24 hours'\n  \n  UNION ALL\n  \n  SELECT \n    'systems' as table_name,\n    count(*) as modification_count,\n    max(updated_at) as last_modification\n  FROM systems\n  WHERE updated_at >= now() - interval '24 hours'\n),\nlogin_patterns AS (\n  -- Analyze login patterns from system logs\n  SELECT \n    user_id,\n    count(*) as login_count,\n    count(DISTINCT DATE(created_at)) as unique_days,\n    min(created_at) as first_login,\n    max(created_at) as last_login,\n    array_agg(DISTINCT extract(hour from created_at)::int ORDER BY extract(hour from created_at)::int) as login_hours\n  FROM system_logs\n  WHERE event_type = 'user_login'\n    AND created_at >= now() - interval '30 days'\n  GROUP BY user_id\n),\nfailed_attempts AS (\n  -- Track failed login attempts\n  SELECT \n    count(*) as total_failed_attempts,\n    count(DISTINCT user_id) as unique_users_with_failures,\n    max(created_at) as last_failed_attempt\n  FROM system_logs\n  WHERE event_type = 'failed_login'\n    AND created_at >= now() - interval '24 hours'\n)\nSELECT \n  'access_pattern_analysis' as audit_type,\n  json_build_object(\n    'suspicious_activity', (\n      SELECT json_agg(row_to_json(sa)) FROM suspicious_activity sa\n    ),\n    'recent_modifications', (\n      SELECT json_agg(row_to_json(rm)) FROM recent_modifications rm\n    ),\n    'login_patterns', (\n      SELECT json_agg(row_to_json(lp)) FROM login_patterns lp\n    ),\n    'failed_attempts_summary', (\n      SELECT row_to_json(fa) FROM failed_attempts fa\n    ),\n    'analysis_timestamp', now()\n  ) as access_data;",
+        "options": {}
+      },
+      "id": "492b0992-81bc-484f-af88-061a3d47b097",
+      "name": "Analyze Access Patterns",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        496,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and format security audit results\nconst webhookData = $('Webhook - Security Auditor').first().json;\nconst auditType = webhookData.audit_type || 'comprehensive';\n\nlet results = {\n  timestamp: new Date().toISOString(),\n  audit_type: auditType,\n  security_score: 100, // Start with perfect score and deduct points\n  findings: [],\n  recommendations: [],\n  compliance_status: 'compliant',\n  risk_level: 'low'\n};\n\nif (auditType === 'user_permissions') {\n  const securityData = $input.first().json.security_data;\n  \n  // Analyze user privileges\n  const superUsers = securityData.database_roles.filter(role => role.rolsuper);\n  const usersWithCreateRole = securityData.database_roles.filter(role => role.rolcreaterole);\n  const expiredAccounts = securityData.database_roles.filter(role => \n    role.rolvaliduntil && new Date(role.rolvaliduntil) < new Date()\n  );\n  \n  // Check for security issues\n  if (superUsers.length > 2) {\n    results.findings.push({\n      severity: 'high',\n      category: 'privilege_escalation',\n      description: `${superUsers.length} superuser accounts detected`,\n      recommendation: 'Minimize superuser accounts to essential users only',\n      risk_score: 20\n    });\n    results.security_score -= 20;\n  }\n  \n  if (usersWithCreateRole.length > 1) {\n    results.findings.push({\n      severity: 'medium',\n      category: 'privilege_management',\n      description: `${usersWithCreateRole.length} users can create roles`,\n      recommendation: 'Limit role creation privileges to database administrators',\n      risk_score: 10\n    });\n    results.security_score -= 10;\n  }\n  \n  if (expiredAccounts.length > 0) {\n    results.findings.push({\n      severity: 'medium',\n      category: 'account_management',\n      description: `${expiredAccounts.length} expired accounts still active`,\n      recommendation: 'Disable or remove expired user accounts',\n      risk_score: 15\n    });\n    results.security_score -= 15;\n  }\n  \n  results.detailed_analysis = securityData;\n  \n} else if (auditType === 'data_integrity') {\n  const integrityData = $input.first().json.integrity_data;\n  \n  // Check constraint violations\n  const violations = integrityData.constraint_violations || [];\n  const qualityIssues = integrityData.data_quality_issues || [];\n  \n  violations.forEach(violation => {\n    if (violation.violation_count > 0) {\n      results.findings.push({\n        severity: 'high',\n        category: 'data_integrity',\n        description: `${violation.violation_count} ${violation.violation_type} in ${violation.table_name}`,\n        recommendation: 'Fix foreign key constraint violations immediately',\n        risk_score: 25\n      });\n      results.security_score -= 25;\n    }\n  });\n  \n  qualityIssues.forEach(issue => {\n    if (issue.issue_count > 0) {\n      const severity = issue.check_type === 'duplicate_emails' ? 'high' : 'medium';\n      const riskScore = severity === 'high' ? 15 : 10;\n      \n      results.findings.push({\n        severity: severity,\n        category: 'data_quality',\n        description: `${issue.issue_count} instances of ${issue.description}`,\n        recommendation: 'Implement data validation and cleanup procedures',\n        risk_score: riskScore\n      });\n      results.security_score -= riskScore;\n    }\n  });\n  \n  results.detailed_analysis = integrityData;\n  \n} else if (auditType === 'access_patterns') {\n  const accessData = $input.first().json.access_data;\n  \n  // Analyze suspicious activity\n  const suspiciousActivity = accessData.suspicious_activity || [];\n  const failedAttempts = accessData.failed_attempts_summary;\n  \n  if (suspiciousActivity.length > 0) {\n    results.findings.push({\n      severity: 'high',\n      category: 'suspicious_activity',\n      description: `${suspiciousActivity.length} users with unusual activity patterns`,\n      recommendation: 'Investigate high-frequency events and potential security breaches',\n      risk_score: 30\n    });\n    results.security_score -= 30;\n  }\n  \n  if (failedAttempts && failedAttempts.total_failed_attempts > 50) {\n    results.findings.push({\n      severity: 'medium',\n      category: 'authentication_security',\n      description: `${failedAttempts.total_failed_attempts} failed login attempts in last 24 hours`,\n      recommendation: 'Implement account lockout policies and monitor for brute force attacks',\n      risk_score: 15\n    });\n    results.security_score -= 15;\n  }\n  \n  results.detailed_analysis = accessData;\n}\n\n// Determine overall risk level and compliance\nif (results.security_score >= 90) {\n  results.risk_level = 'low';\n  results.compliance_status = 'compliant';\n} else if (results.security_score >= 70) {\n  results.risk_level = 'medium';\n  results.compliance_status = 'partially_compliant';\n} else {\n  results.risk_level = 'high';\n  results.compliance_status = 'non_compliant';\n}\n\n// Add general recommendations\nif (results.findings.length === 0) {\n  results.recommendations.push({\n    priority: 'low',\n    category: 'maintenance',\n    description: 'No security issues detected',\n    action: 'Continue regular security monitoring and auditing'\n  });\n} else {\n  results.recommendations.push({\n    priority: 'high',\n    category: 'security',\n    description: `${results.findings.length} security issues identified`,\n    action: 'Address security findings in order of severity and risk score'\n  });\n  \n  // Add specific recommendations based on findings\n  const highSeverityFindings = results.findings.filter(f => f.severity === 'high');\n  if (highSeverityFindings.length > 0) {\n    results.recommendations.push({\n      priority: 'critical',\n      category: 'immediate_action',\n      description: `${highSeverityFindings.length} high-severity security issues require immediate attention`,\n      action: 'Implement emergency security measures and conduct thorough investigation'\n    });\n  }\n}\n\nreturn { json: results };"
+      },
+      "id": "352bfee3-a6b9-4655-951f-ab5c045198c2",
+      "name": "Process Security Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "85179068-ebf6-4b8d-8303-60d505aad5a3",
+      "name": "Return Security Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        944,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.audit_type }}",
+                    "rightValue": "user_permissions",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "95deb848-2af9-43d1-9972-24f2f57cbc9c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e350e615-a993-4c7f-8928-6560c46fbbfd",
+                    "leftValue": "={{ $json.audit_type }}",
+                    "rightValue": "data_integrity",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Integrity"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "98c7951b-442c-4eb8-8910-0eada3fbe8e2",
+                    "leftValue": "={{ $json.audit_type }}",
+                    "rightValue": "access_patterns",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Access"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        288,
+        176
+      ],
+      "id": "49ab56ec-c1b4-43af-bb25-f1904c422712",
+      "name": "Switch"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Security Auditor": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit User Permissions": {
+      "main": [
+        [
+          {
+            "node": "Process Security Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Data Integrity": {
+      "main": [
+        [
+          {
+            "node": "Process Security Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Access Patterns": {
+      "main": [
+        [
+          {
+            "node": "Process Security Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Security Analysis": {
+      "main": [
+        [
+          {
+            "node": "Return Security Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Audit User Permissions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analyze Data Integrity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analyze Access Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "jm0p2eQCOUK7MFyb",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Life Game App - Wireframes & Specifications</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        
+        .nav-menu {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: #ecf0f1;
+            border-radius: 8px;
+        }
+        
+        .nav-btn {
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .nav-btn:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+        
+        .nav-btn.active {
+            background: #e74c3c;
+        }
+        
+        .screen-section {
+            display: none;
+        }
+        
+        .screen-section.active {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .wireframe {
+            border: 2px solid #34495e;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 30px 0;
+            background: white;
+        }
+        
+        .wireframe-title {
+            background: #34495e;
+            color: white;
+            padding: 12px 20px;
+            margin: -20px -20px 20px -20px;
+            border-radius: 10px 10px 0 0;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        
+        .annotation {
+            position: relative;
+            padding-left: 30px;
+            margin: 15px 0;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        
+        .annotation:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #e74c3c;
+            font-weight: bold;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Life Game App</h1>
+        <p class="subtitle">Complete Wireframe & Design Specifications for Engineering</p>
+        
+        <div class="nav-menu">
+            <button class="nav-btn active" onclick="showScreen('overview')">Overview</button>
+            <button class="nav-btn" onclick="showScreen('onboarding')">Onboarding</button>
+            <button class="nav-btn" onclick="showScreen('dashboard')">Dashboard</button>
+            <button class="nav-btn" onclick="showScreen('habits')">Habits</button>
+            <button class="nav-btn" onclick="showScreen('quests')">Quests</button>
+            <button class="nav-btn" onclick="showScreen('marketplace')">Marketplace</button>
+            <button class="nav-btn" onclick="showScreen('ai')">AI Companion</button>
+            <button class="nav-btn" onclick="showScreen('social')">Social</button>
+            <button class="nav-btn" onclick="showScreen('specs')">Design Specs</button>
+        </div>
+
+        <!-- OVERVIEW SECTION -->
+        <div id="overview" class="screen-section active">
+            <h2>📋 Project Overview</h2>
+            <p style="margin: 20px 0; color: #555;">A gamification app that transforms life goals into an engaging RPG experience.</p>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">Core Features</div>
+                <ul style="margin-left: 20px; color: #555; line-height: 2;">
+                    <li><strong>Character System:</strong> Level progression, HP, coins, classes</li>
+                    <li><strong>Habits & Skills:</strong> Good/bad habits, 7 skill trees, streaks</li>
+                    <li><strong>Quest System (PARA):</strong> Projects, tasks, rewards</li>
+                    <li><strong>AI Companion:</strong> Daily missions, weekly reports</li>
+                    <li><strong>Social:</strong> Guilds, leaderboards, friend activity</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- ONBOARDING SECTION -->
+        <div id="onboarding" class="screen-section">
+            <h2>🚀 Onboarding Flow</h2>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">1.1 Welcome Screen</div>
+                <p>Full-screen welcome with app branding and story intro</p>
+                <div class="annotation">Animated entrance (fade in + slide up)</div>
+                <div class="annotation">"Begin Your Journey" button triggers account creation</div>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">1.2 Character Creation</div>
+                <p>Avatar selection, name input, goals textarea</p>
+                <div class="annotation">Step 1 of 3 - Progress dots at bottom</div>
+                <div class="annotation">Avatar grid with 8+ emoji options</div>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">1.3 Class Selection Quiz</div>
+                <p>5 personality questions to determine starter class</p>
+                <div class="annotation">Step 2 of 3 - Single-select options with visual feedback</div>
+                <div class="annotation">Auto-assigns class: Warrior, Scholar, Builder, Healer, etc.</div>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">1.4 Tutorial Quest</div>
+                <p>First quest with 3 simple tasks to learn app basics</p>
+                <div class="annotation">Step 3 of 3 - Tasks show XP and coin rewards</div>
+                <div class="annotation">Progress bar updates as tasks complete</div>
+            </div>
+        </div>
+
+        <!-- DASHBOARD SECTION -->
+        <div id="dashboard" class="screen-section">
+            <h2>🏠 Home Dashboard</h2>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">2.1 Main Dashboard</div>
+                <p>Character card shows level, XP, HP, and coins</p>
+                <div class="annotation">Quick action buttons for frequent tasks</div>
+                <div class="annotation">Daily random events displayed as cards</div>
+                <div class="annotation">Active streaks shown with fire emoji indicator</div>
+                <div class="annotation">Bottom navigation always visible (sticky)</div>
+            </div>
+        </div>
+
+        <!-- HABITS SECTION -->
+        <div id="habits" class="screen-section">
+            <h2>💪 Habits & Skills</h2>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">3.1 Habits Dashboard</div>
+                <p>List of all habits with filter tabs (All/Good/Bad)</p>
+                <div class="annotation">Good habits show check-in button and streak counter</div>
+                <div class="annotation">Bad habits show battle button with HP damage warning</div>
+                <div class="annotation">Completed habits today are grayed out with checkmark</div>
+                <div class="annotation">+ button opens habit creation modal</div>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">3.2 Skill Tree Overview</div>
+                <p>All 7 skill trees listed with progress bars</p>
+                <div class="annotation">Each skill shows current level and XP to next level</div>
+                <div class="annotation">Locked skills show unlock requirements</div>
+                <div class="annotation">Tap skill card to see detailed skill tree with perks</div>
+            </div>
+        </div>
+
+        <!-- QUESTS SECTION -->
+        <div id="quests" class="screen-section">
+            <h2>🗺️ Quests (PARA System)</h2>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">4.1 Quests Dashboard</div>
+                <p>Active quests (projects) with progress tracking</p>
+                <div class="annotation">Difficulty badges: Easy, Medium, Hard, Epic, Legendary</div>
+                <div class="annotation">Deadline shown with overdue warning in red</div>
+                <div class="annotation">XP and coin rewards displayed prominently</div>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">4.2 Quest Detail View</div>
+                <p>Quest header shows difficulty, deadline, and rewards</p>
+                <div class="annotation">Task list with checkboxes and individual rewards</div>
+                <div class="annotation">Completed tasks are checked and grayed out</div>
+                <div class="annotation">Notes section for additional context</div>
+            </div>
+        </div>
+
+        <!-- MARKETPLACE SECTION -->
+        <div id="marketplace" class="screen-section">
+            <h2>🛒 Marketplace & Economy</h2>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">5.1 Marketplace</div>
+                <p>Items displayed with icon, name, description, rarity, and price</p>
+                <div class="annotation">Rarity tiers: Common, Uncommon, Rare, Epic, Legendary</div>
+                <div class="annotation">User's coin balance always visible in top right</div>
+                <div class="annotation">Black Market and Hotel as special feature cards</div>
+            </div>
+        </div>
+
+        <!-- AI COMPANION SECTION -->
+        <div id="ai" class="screen-section">
+            <h2>🤖 AI Companion</h2>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">6.1 AI Companion Chat</div>
+                <p>Chat interface with AI companion avatar</p>
+                <div class="annotation">AI messages in gray bubbles, user messages in blue</div>
+                <div class="annotation">AI provides personalized recommendations based on data</div>
+                <div class="annotation">Actionable suggestions shown as interactive cards</div>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">6.2 Daily Missions (AI Generated)</div>
+                <p>AI generates 3 personalized missions daily</p>
+                <div class="annotation">Progress tracker shows completion status</div>
+                <div class="annotation">Bonus XP reward for completing all 3 missions</div>
+                <div class="annotation">Missions reset at midnight (countdown shown)</div>
+            </div>
+        </div>
+
+        <!-- SOCIAL SECTION -->
+        <div id="social" class="screen-section">
+            <h2>👥 Social & Community</h2>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">7.1 Social Hub</div>
+                <p>Quick access to guild and friends list</p>
+                <div class="annotation">Leaderboard shows top players with rankings</div>
+                <div class="annotation">User's position highlighted in blue</div>
+                <div class="annotation">Friend activity feed with reactions</div>
+            </div>
+        </div>
+
+        <!-- DESIGN SPECS SECTION -->
+        <div id="specs" class="screen-section">
+            <h2>🎨 Design Specifications</h2>
+            
+            <div class="wireframe">
+                <div class="wireframe-title">Color Palette</div>
+                <ul style="margin-left: 20px; line-height: 2;">
+                    <li><strong>#3498db</strong> - Primary Blue (buttons, active states)</li>
+                    <li><strong>#2ecc71</strong> - Success Green (good habits, completed tasks)</li>
+                    <li><strong>#e74c3c</strong> - Danger Red (bad habits, HP damage)</li>
+                    <li><strong>#f39c12</strong> - XP Gold (rewards, coins)</li>
+                    <li><strong>#9b59b6</strong> - Epic Purple (rare items)</li>
+                    <li><strong>#2c3e50</strong> - Dark Gray (primary text)</li>
+                    <li><strong>#ecf0f1</strong> - Light Gray (backgrounds, borders)</li>
+                </ul>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">Typography</div>
+                <ul style="margin-left: 20px; line-height: 2;">
+                    <li><strong>H1 Page Title:</strong> 24px, Bold (700)</li>
+                    <li><strong>H2 Section Title:</strong> 20px, Bold (700)</li>
+                    <li><strong>Body Text:</strong> 14px, Regular (400)</li>
+                    <li><strong>Small Text:</strong> 12px, Regular (400)</li>
+                    <li><strong>Button Text:</strong> 14px, Bold (700)</li>
+                </ul>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">Spacing & Layout</div>
+                <ul style="margin-left: 20px; line-height: 2;">
+                    <li><strong>Screen Padding:</strong> 15px on all sides</li>
+                    <li><strong>Card Padding:</strong> 15px internal</li>
+                    <li><strong>Border Radius - Cards:</strong> 12px</li>
+                    <li><strong>Border Radius - Buttons:</strong> 8px</li>
+                    <li><strong>Bottom Navigation Height:</strong> 70px</li>
+                </ul>
+            </div>
+
+            <div class="wireframe">
+                <div class="wireframe-title">Animations</div>
+                <ul style="margin-left: 20px; line-height: 2;">
+                    <li><strong>Screen Transitions:</strong> 300ms, ease-in-out</li>
+                    <li><strong>Button Hover:</strong> 200ms, ease</li>
+                    <li><strong>Progress Bar Fill:</strong> 500ms, ease-out</li>
+                    <li><strong>Modal Open/Close:</strong> 250ms</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showScreen(screenId) {
+            // Hide all screens
+            document.querySelectorAll('.screen-section').forEach(section => {
+                section.classList.remove('active');
+            });
+            
+            // Remove active from all buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected screen
+            document.getElementById(screenId).classList.add('active');
+            
+            // Highlight active button
+            event.target.classList.add('active');
+            
+            // Scroll to top
+            window.scrollTo(0, 0);
+        }
+    </script>
+</body>
+</html>

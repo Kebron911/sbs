@@ -1,0 +1,290 @@
+{
+  "name": "SUBFLOW: Database Query",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-database-query",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_database_query",
+      "name": "Webhook - Database Query",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-database-query"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "query_check",
+              "leftValue": "={{ $json.body.query }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "operation_check",
+              "leftValue": "={{ $json.body.operation }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate_query_params",
+      "name": "Validate Query Parameters",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "query",
+              "name": "query",
+              "value": "={{ $json.body.query }}",
+              "type": "string"
+            },
+            {
+              "id": "operation",
+              "name": "operation",
+              "value": "={{ $json.body.operation }}",
+              "type": "string"
+            },
+            {
+              "id": "parameters",
+              "name": "parameters",
+              "value": "={{ $json.body.parameters || [] }}",
+              "type": "array"
+            },
+            {
+              "id": "return_first_only",
+              "name": "returnFirstOnly",
+              "value": "={{ $json.body.return_first_only || false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_query_data",
+      "name": "Prepare Query Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        650,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "={{ $json.operation }}",
+        "query": "={{ $json.query }}",
+        "additionalFields": {
+          "mode": "={{ $json.returnFirstOnly ? 'single' : 'multiple' }}"
+        }
+      },
+      "id": "execute_database_query",
+      "name": "Execute Database Query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        850,
+        250
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success_check",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check_query_success",
+      "name": "Check Query Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"data\": $json,\n  \"count\": Array.isArray($json) ? $json.length : 1\n} }}",
+        "options": {}
+      },
+      "id": "send_success_response",
+      "name": "Send Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Database query failed\",\n  \"message\": $json.error || \"Unknown database error\",\n  \"query\": $('Prepare Query Data').item.json.query\n} }}",
+        "options": {
+          "responseCode": "500"
+        }
+      },
+      "id": "send_query_error_response",
+      "name": "Send Query Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Invalid request\",\n  \"message\": \"Missing required parameters: query and operation\"\n} }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "send_validation_error",
+      "name": "Send Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        650,
+        350
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Database Query": {
+      "main": [
+        [
+          {
+            "node": "Validate Query Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Query Parameters": {
+      "main": [
+        [
+          {
+            "node": "Prepare Query Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Query Data": {
+      "main": [
+        [
+          {
+            "node": "Execute Database Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Database Query": {
+      "main": [
+        [
+          {
+            "node": "Check Query Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Query Success": {
+      "main": [
+        [
+          {
+            "node": "Send Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Query Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "tags": [],
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

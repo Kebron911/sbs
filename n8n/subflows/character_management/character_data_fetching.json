@@ -1,0 +1,369 @@
+{
+  "name": "SUBFLOW: Character Data Fetching",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-character-data",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_character_data",
+      "name": "Webhook - Character Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-character-data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "character_id",
+              "name": "characterId",
+              "value": "={{ $json.body.character_id }}",
+              "type": "number"
+            },
+            {
+              "id": "user_id",
+              "name": "userId",
+              "value": "={{ $json.body.user_id }}",
+              "type": "number"
+            },
+            {
+              "id": "include_skills",
+              "name": "includeSkills",
+              "value": "={{ $json.body.include_skills !== false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "include_habits",
+              "name": "includeHabits",
+              "value": "={{ $json.body.include_habits !== false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "include_systems",
+              "name": "includeSystems",
+              "value": "={{ $json.body.include_systems !== false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "include_achievements",
+              "name": "includeAchievements",
+              "value": "={{ $json.body.include_achievements || false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_query_params",
+      "name": "Prepare Query Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH character_data AS (\n  SELECT \n    c.id, c.user_id, c.class, c.level, c.xp, c.total_xp, c.hp, c.max_hp, \n    c.coins, c.prestige_level, c.xp_multiplier, c.created_at, c.updated_at\n  FROM characters c \n  WHERE \n    (CASE WHEN {{ $json.characterId }} IS NOT NULL THEN c.id = {{ $json.characterId }} \n          WHEN {{ $json.userId }} IS NOT NULL THEN c.user_id = {{ $json.userId }} \n          ELSE FALSE END)\n),\nskill_stats AS (\n  SELECT \n    character_id,\n    COUNT(*) as total_skills,\n    COUNT(CASE WHEN level >= 5 THEN 1 END) as level5_skills,\n    COUNT(CASE WHEN level >= 10 THEN 1 END) as level10_skills,\n    COUNT(CASE WHEN unlocked_by LIKE '%sbs%' OR unlocked_by = 'system_progression' THEN 1 END) as sbs_generated_skills,\n    AVG(level)::DECIMAL(5,2) as avg_skill_level,\n    MAX(level) as max_skill_level\n  FROM skills \n  WHERE character_id = (SELECT id FROM character_data)\n  GROUP BY character_id\n),\n\nhabit_stats AS (\n  SELECT \n    character_id,\n    COUNT(*) as total_habits,\n    COUNT(CASE WHEN type = 'good' THEN 1 END) as good_habits,\n    COUNT(CASE WHEN type = 'bad' THEN 1 END) as bad_habits,\n    COUNT(CASE WHEN created_by LIKE '%sbs%' OR created_by = 'system_progression' THEN 1 END) as sbs_generated_habits,\n    AVG(streak)::DECIMAL(5,2) as avg_streak,\n    MAX(streak) as max_streak,\n    COUNT(CASE WHEN streak >= 30 THEN 1 END) as month_streaks\n  FROM habits \n  WHERE character_id = (SELECT id FROM character_data)\n  GROUP BY character_id\n),\n\nsystem_stats AS (\n  SELECT \n    user_id,\n    COUNT(*) as total_systems,\n    COUNT(CASE WHEN current_stage = 'complete' THEN 1 END) as completed_systems,\n    COUNT(CASE WHEN current_stage IN ('design', 'build', 'automate', 'review') THEN 1 END) as active_systems,\n    MAX(CASE \n      WHEN current_stage = 'design' THEN 2\n      WHEN current_stage = 'build' THEN 3 \n      WHEN current_stage = 'automate' THEN 4\n      WHEN current_stage = 'review' THEN 5\n      WHEN current_stage = 'complete' THEN 6\n      ELSE 1 END) as max_stage_reached\n  FROM systems \n  WHERE user_id = (SELECT user_id FROM character_data)\n  GROUP BY user_id\n),\n\nroutine_stats AS (\n  SELECT \n    s.user_id,\n    COUNT(r.*) as total_routines,\n    COUNT(CASE WHEN r.automated = true THEN 1 END) as automated_routines,\n    AVG(r.streak)::DECIMAL(5,2) as avg_routine_streak,\n    MAX(r.streak) as max_routine_streak\n  FROM routines r\n  JOIN systems s ON r.system_id = s.id\n  WHERE s.user_id = (SELECT user_id FROM character_data)\n  GROUP BY s.user_id\n)\n\nSELECT \n  cd.*,\n  COALESCE(ss.total_skills, 0) as total_skills,\n  COALESCE(ss.level5_skills, 0) as level5_skills,\n  COALESCE(ss.level10_skills, 0) as level10_skills,\n  COALESCE(ss.sbs_generated_skills, 0) as sbs_generated_skills,\n  COALESCE(ss.avg_skill_level, 0) as avg_skill_level,\n  COALESCE(ss.max_skill_level, 0) as max_skill_level,\n  COALESCE(hs.total_habits, 0) as total_habits,\n  COALESCE(hs.good_habits, 0) as good_habits,\n  COALESCE(hs.bad_habits, 0) as bad_habits,\n  COALESCE(hs.sbs_generated_habits, 0) as sbs_generated_habits,\n  COALESCE(hs.avg_streak, 0) as avg_habit_streak,\n  COALESCE(hs.max_streak, 0) as max_habit_streak,\n  COALESCE(hs.month_streaks, 0) as habit_month_streaks,\n  COALESCE(sys.total_systems, 0) as total_systems,\n  COALESCE(sys.completed_systems, 0) as completed_systems,\n  COALESCE(sys.active_systems, 0) as active_systems,\n  COALESCE(sys.max_stage_reached, 1) as max_stage_reached,\n  COALESCE(rs.total_routines, 0) as total_routines,\n  COALESCE(rs.automated_routines, 0) as automated_routines,\n  COALESCE(rs.avg_routine_streak, 0) as avg_routine_streak,\n  COALESCE(rs.max_routine_streak, 0) as max_routine_streak\nFROM character_data cd\nLEFT JOIN skill_stats ss ON cd.id = ss.character_id\nLEFT JOIN habit_stats hs ON cd.id = hs.character_id\nLEFT JOIN system_stats sys ON cd.user_id = sys.user_id\nLEFT JOIN routine_stats rs ON cd.user_id = rs.user_id;",
+        "additionalFields": {
+          "mode": "single"
+        }
+      },
+      "id": "fetch_comprehensive_character_data",
+      "name": "Fetch Comprehensive Character Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "character_found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check_character_exists",
+      "name": "Check Character Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.id, s.character_id, s.name, s.xp, s.level, s.unlocked, s.unlocked_by, s.created_at, s.updated_at\nFROM skills s \nWHERE s.character_id = {{ $('Fetch Comprehensive Character Data').item.json.id }}\nORDER BY s.level DESC, s.xp DESC;",
+        "additionalFields": {
+          "mode": "multiple"
+        }
+      },
+      "id": "fetch_skills_data",
+      "name": "Fetch Skills Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT h.id, h.character_id, h.name, h.description, h.type, h.frequency, h.streak, h.xp_value, h.skill_id, h.created_by, h.last_completed, h.created_at, h.updated_at\nFROM habits h \nWHERE h.character_id = {{ $('Fetch Comprehensive Character Data').item.json.id }}\nORDER BY h.streak DESC, h.created_at DESC;",
+        "additionalFields": {
+          "mode": "multiple"
+        }
+      },
+      "id": "fetch_habits_data",
+      "name": "Fetch Habits Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.id, s.user_id, s.name, s.description, s.category, s.current_stage, s.target_stage, s.created_at, s.updated_at\nFROM systems s \nWHERE s.user_id = {{ $('Fetch Comprehensive Character Data').item.json.user_id }}\nORDER BY s.current_stage DESC, s.created_at DESC;",
+        "additionalFields": {
+          "mode": "multiple"
+        }
+      },
+      "id": "fetch_systems_data",
+      "name": "Fetch Systems Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all character data into comprehensive response\nconst characterData = $('Fetch Comprehensive Character Data').item.json;\nconst includeSkills = $('Prepare Query Parameters').item.json.includeSkills;\nconst includeHabits = $('Prepare Query Parameters').item.json.includeHabits;\nconst includeSystems = $('Prepare Query Parameters').item.json.includeSystems;\n\n// Build response object\nconst response = {\n  character: {\n    id: characterData.id,\n    user_id: characterData.user_id,\n    class: characterData.class,\n    level: characterData.level,\n    xp: characterData.xp,\n    total_xp: characterData.total_xp,\n    hp: characterData.hp,\n    max_hp: characterData.max_hp,\n    coins: characterData.coins,\n    prestige_level: characterData.prestige_level || 0,\n    xp_multiplier: characterData.xp_multiplier || 1.0,\n    created_at: characterData.created_at,\n    updated_at: characterData.updated_at\n  },\n  stats: {\n    skills: {\n      total: characterData.total_skills,\n      level5_plus: characterData.level5_skills,\n      level10_plus: characterData.level10_skills,\n      sbs_generated: characterData.sbs_generated_skills,\n      average_level: parseFloat(characterData.avg_skill_level) || 0,\n      max_level: characterData.max_skill_level\n    },\n    habits: {\n      total: characterData.total_habits,\n      good: characterData.good_habits,\n      bad: characterData.bad_habits,\n      sbs_generated: characterData.sbs_generated_habits,\n      average_streak: parseFloat(characterData.avg_habit_streak) || 0,\n      max_streak: characterData.max_habit_streak,\n      month_streaks: characterData.habit_month_streaks\n    },\n    systems: {\n      total: characterData.total_systems,\n      completed: characterData.completed_systems,\n      active: characterData.active_systems,\n      max_stage_reached: characterData.max_stage_reached\n    },\n    routines: {\n      total: characterData.total_routines,\n      automated: characterData.automated_routines,\n      average_streak: parseFloat(characterData.avg_routine_streak) || 0,\n      max_streak: characterData.max_routine_streak\n    }\n  }\n};\n\n// Add detailed data if requested\nif (includeSkills) {\n  response.skills = $('Fetch Skills Data').all().map(item => item.json) || [];\n}\n\nif (includeHabits) {\n  response.habits = $('Fetch Habits Data').all().map(item => item.json) || [];\n}\n\nif (includeSystems) {\n  response.systems = $('Fetch Systems Data').all().map(item => item.json) || [];\n}\n\nreturn {\n  json: response\n};"
+      },
+      "id": "combine_character_data",
+      "name": "Combine Character Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"data\": $json,\n  \"message\": \"Character data retrieved successfully\"\n} }}",
+        "options": {}
+      },
+      "id": "send_character_data_success",
+      "name": "Send Character Data Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Character not found\",\n  \"message\": \"No character found with the provided ID\"\n} }}",
+        "options": {
+          "responseCode": "404"
+        }
+      },
+      "id": "send_character_not_found",
+      "name": "Send Character Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Character Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Query Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Query Parameters": {
+      "main": [
+        [
+          {
+            "node": "Fetch Comprehensive Character Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Comprehensive Character Data": {
+      "main": [
+        [
+          {
+            "node": "Check Character Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Character Exists": {
+      "main": [
+        [
+          {
+            "node": "Fetch Skills Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Habits Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Systems Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Character Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Skills Data": {
+      "main": [
+        [
+          {
+            "node": "Combine Character Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Habits Data": {
+      "main": [
+        [
+          {
+            "node": "Combine Character Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Systems Data": {
+      "main": [
+        [
+          {
+            "node": "Combine Character Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Character Data": {
+      "main": [
+        [
+          {
+            "node": "Send Character Data Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "subflow-character-data",
+  "tags": [],
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T16:26:12.000Z",
+  "createdAt": "2025-10-30T16:26:12.000Z"
+}

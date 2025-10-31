@@ -1,0 +1,164 @@
+{
+  "name": "GOAL_MANAGER_WORKING",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-goal",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook - Create Goal",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [200, 300],
+      "webhookId": "create-goal"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-character-data",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"user_id\": $json.body.user_id,\n  \"include_skills_details\": false,\n  \"include_habits_details\": false,\n  \"include_systems_details\": false,\n  \"include_routines_details\": false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "2",
+      "name": "Get Character Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "operation",
+              "value": "executeQuery"
+            },
+            {
+              "name": "query",
+              "value": "INSERT INTO goals (character_id, title, description, xp_reward, coin_reward, status) VALUES ($1, $2, $3, $4, $5, 'active') RETURNING *"
+            },
+            {
+              "name": "parameters",
+              "value": "={{ [$('Get Character Data').item.json.data.character.id, $('Webhook - Create Goal').item.json.body.title, $('Webhook - Create Goal').item.json.body.description, $('Webhook - Create Goal').item.json.body.xp_reward, $('Webhook - Create Goal').item.json.body.coin_reward] }}"
+            },
+            {
+              "name": "return_first_only",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3",
+      "name": "Create Goal (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "response_body",
+              "value": "={{ {\n  \"success\": true,\n  \"message\": \"Goal created successfully!\",\n  \"goal\": $('Create Goal (Subflow)').item.json.data,\n  \"timestamp\": new Date().toISOString()\n} }}"
+            },
+            {
+              "name": "status_code",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4",
+      "name": "Respond Success (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 300],
+      "continueOnFail": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1": {
+      "main": [
+        [
+          {
+            "node": "2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2": {
+      "main": [
+        [
+          {
+            "node": "3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3": {
+      "main": [
+        [
+          {
+            "node": "4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "working-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "goal-manager-working",
+  "tags": []
+}

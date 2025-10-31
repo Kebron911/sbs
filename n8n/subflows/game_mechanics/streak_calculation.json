@@ -1,0 +1,96 @@
+{
+  "name": "STREAK_CALCULATION",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-streak-calculation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook - Streak Calculation",
+      "name": "Webhook - Streak Calculation",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        200
+      ],
+      "webhookId": "subflow-streak-calculation"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Streak Calculation Engine\nconst data = $json;\nconst streakType = data.streak_type || 'daily'; // daily, weekly, custom\nconst currentStreak = data.current_streak || 0;\nconst lastCompleted = data.last_completed; // ISO date string or null\nconst completionDate = data.completion_date || new Date().toISOString().split('T')[0];\nconst frequency = data.frequency || 'daily'; // daily, weekly, monthly\nconst allowSameDay = data.allow_same_day || false;\nconst gracePeriod = data.grace_period || 0; // days of grace period\n\n// Convert dates\nconst completionDateObj = new Date(completionDate);\nconst lastCompletedObj = lastCompleted ? new Date(lastCompleted) : null;\n\n// Check if already completed today/this period\nif (lastCompleted && !allowSameDay) {\n  if (streakType === 'daily' && lastCompleted === completionDate) {\n    return {\n      json: {\n        success: true,\n        streak_result: 'already_completed',\n        current_streak: currentStreak,\n        new_streak: currentStreak,\n        streak_changed: false,\n        message: 'Already completed for this period',\n        calculation_details: {\n          last_completed: lastCompleted,\n          completion_date: completionDate,\n          streak_type: streakType\n        }\n      }\n    };\n  }\n}\n\n// Calculate streak based on type and frequency\nlet newStreak = currentStreak;\nlet streakResult = 'maintained';\nlet daysDifference = 0;\n\nif (lastCompletedObj) {\n  daysDifference = Math.floor((completionDateObj - lastCompletedObj) / (1000 * 60 * 60 * 24));\n  \n  if (streakType === 'daily') {\n    if (daysDifference === 1 || (frequency === 'daily' && daysDifference === 1)) {\n      // Consecutive day - increment streak\n      newStreak = currentStreak + 1;\n      streakResult = 'increased';\n    } else if (daysDifference === 0) {\n      // Same day - maintain streak\n      newStreak = currentStreak;\n      streakResult = 'maintained';\n    } else if (daysDifference <= (1 + gracePeriod)) {\n      // Within grace period - maintain but don't increment\n      newStreak = currentStreak;\n      streakResult = 'grace_period';\n    } else {\n      // Gap too large - reset streak\n      newStreak = 1;\n      streakResult = 'reset';\n    }\n  } else if (streakType === 'weekly') {\n    const weeksDifference = Math.floor(daysDifference / 7);\n    if (weeksDifference === 1) {\n      newStreak = currentStreak + 1;\n      streakResult = 'increased';\n    } else if (weeksDifference === 0) {\n      newStreak = currentStreak;\n      streakResult = 'maintained';\n    } else {\n      newStreak = 1;\n      streakResult = 'reset';\n    }\n  } else if (streakType === 'custom') {\n    // Custom logic based on frequency\n    const expectedInterval = {\n      'daily': 1,\n      'weekly': 7,\n      'monthly': 30\n    }[frequency] || 1;\n    \n    if (daysDifference <= expectedInterval + gracePeriod) {\n      if (daysDifference <= expectedInterval) {\n        newStreak = currentStreak + 1;\n        streakResult = 'increased';\n      } else {\n        newStreak = currentStreak;\n        streakResult = 'grace_period';\n      }\n    } else {\n      newStreak = 1;\n      streakResult = 'reset';\n    }\n  }\n} else {\n  // First completion ever\n  newStreak = 1;\n  streakResult = 'started';\n}\n\n// Calculate streak bonuses and multipliers\nconst streakBonuses = {\n  xp_multiplier: 1.0,\n  coin_multiplier: 1.0,\n  bonus_percentage: 0,\n  milestone_reached: null\n};\n\n// Apply streak-based bonuses\nif (newStreak >= 365) {\n  streakBonuses.xp_multiplier = 5.0;\n  streakBonuses.coin_multiplier = 5.0;\n  streakBonuses.bonus_percentage = 400;\n  streakBonuses.milestone_reached = 'legendary_year';\n} else if (newStreak >= 180) {\n  streakBonuses.xp_multiplier = 3.5;\n  streakBonuses.coin_multiplier = 3.5;\n  streakBonuses.bonus_percentage = 250;\n  streakBonuses.milestone_reached = 'epic_half_year';\n} else if (newStreak >= 90) {\n  streakBonuses.xp_multiplier = 3.0;\n  streakBonuses.coin_multiplier = 3.0;\n  streakBonuses.bonus_percentage = 200;\n  streakBonuses.milestone_reached = 'master_quarter';\n} else if (newStreak >= 30) {\n  streakBonuses.xp_multiplier = 2.0;\n  streakBonuses.coin_multiplier = 2.0;\n  streakBonuses.bonus_percentage = 100;\n  streakBonuses.milestone_reached = 'champion_month';\n} else if (newStreak >= 14) {\n  streakBonuses.xp_multiplier = 1.7;\n  streakBonuses.coin_multiplier = 1.7;\n  streakBonuses.bonus_percentage = 70;\n  streakBonuses.milestone_reached = 'veteran_fortnight';\n} else if (newStreak >= 7) {\n  streakBonuses.xp_multiplier = 1.5;\n  streakBonuses.coin_multiplier = 1.5;\n  streakBonuses.bonus_percentage = 50;\n  streakBonuses.milestone_reached = 'warrior_week';\n} else if (newStreak >= 3) {\n  streakBonuses.xp_multiplier = 1.2;\n  streakBonuses.coin_multiplier = 1.2;\n  streakBonuses.bonus_percentage = 20;\n  streakBonuses.milestone_reached = 'starter_momentum';\n}\n\n// Generate encouraging message\nlet message = '';\nswitch (streakResult) {\n  case 'started':\n    message = 'Great start! Your streak journey begins now!';\n    break;\n  case 'increased':\n    message = `Amazing! Streak increased to ${newStreak} days!`;\n    if (streakBonuses.milestone_reached) {\n      message += ` You've reached ${streakBonuses.milestone_reached} status!`;\n    }\n    break;\n  case 'maintained':\n    message = `Consistency maintained! Keep up the ${newStreak}-day streak!`;\n    break;\n  case 'grace_period':\n    message = `Streak preserved within grace period. Current: ${newStreak} days`;\n    break;\n  case 'reset':\n    message = `Streak reset to 1. Don't give up - every master was once a beginner!`;\n    break;\n  default:\n    message = `Streak status: ${streakResult}`;\n}\n\nreturn {\n  json: {\n    success: true,\n    streak_result: streakResult,\n    current_streak: currentStreak,\n    new_streak: newStreak,\n    streak_changed: newStreak !== currentStreak,\n    days_difference: daysDifference,\n    bonuses: streakBonuses,\n    message: message,\n    calculation_details: {\n      last_completed: lastCompleted,\n      completion_date: completionDate,\n      streak_type: streakType,\n      frequency: frequency,\n      grace_period: gracePeriod,\n      allow_same_day: allowSameDay\n    },\n    next_completion_date: (() => {\n      const nextDate = new Date(completionDateObj);\n      const interval = {\n        'daily': 1,\n        'weekly': 7,\n        'monthly': 30\n      }[frequency] || 1;\n      nextDate.setDate(nextDate.getDate() + interval);\n      return nextDate.toISOString().split('T')[0];\n    })()\n  }\n};"
+      },
+      "id": "Calculate Streak",
+      "name": "Calculate Streak",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Respond with Results",
+      "name": "Respond with Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        200
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Streak Calculation": {
+      "main": [
+        [
+          {
+            "node": "Calculate Streak",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Streak": {
+      "main": [
+        [
+          {
+            "node": "Respond with Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "streak-calculation",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

@@ -1,0 +1,931 @@
+{
+  "name": "INIT_USER_SETUP",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user-signup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_trigger",
+      "name": "Webhook - New User Signup",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "user-signup-init"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "b8c4c621-5b8e-45af-aefd-0e27dd1bc2c6",
+              "leftValue": "={{ $json.body.user_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "rightType": "any"
+              }
+            },
+            {
+              "id": "e5a4d789-3c2f-4b8a-9d1e-2f8e7c6b5a90",
+              "leftValue": "={{ $json.body.class }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate_input",
+      "name": "Validate Required Fields",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO characters (user_id, class, bio, goals, level, xp, hp, coins, prestige_level, last_login) VALUES ($1, $2, $3, $4, 1, 0, 100, 100, 0, NOW()) RETURNING *",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.body.user_id }}"
+              },
+              {
+                "parameter": "={{ $json.body.class }}"
+              },
+              {
+                "parameter": "={{ $json.body.bio || 'New adventurer ready to grow!' }}"
+              },
+              {
+                "parameter": "={{ $json.body.goals || 'Build positive habits and grow stronger every day' }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "create_character",
+      "name": "Create Character",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        550,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "q3KSK8781V4FUxqD",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "default_skills",
+              "name": "defaultSkills",
+              "value": "={{ [{name: 'Health & Fitness', xp: 0, level: 1, unlocked: true}, {name: 'Career & Work', xp: 0, level: 1, unlocked: true}, {name: 'Learning & Knowledge', xp: 0, level: 1, unlocked: true}, {name: 'Social & Relationships', xp: 0, level: 1, unlocked: true}] }}",
+              "type": "array"
+            },
+            {
+              "id": "character_id",
+              "name": "characterId",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_default_skills",
+      "name": "Prepare Default Skills",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "multiplex",
+        "options": {}
+      },
+      "id": "split_skills",
+      "name": "Split Skills Array",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO skills (character_id, name, xp, level, unlocked) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.characterId }}"
+              },
+              {
+                "parameter": "={{ $json.name }}"
+              },
+              {
+                "parameter": "={{ $json.xp }}"
+              },
+              {
+                "parameter": "={{ $json.level }}"
+              },
+              {
+                "parameter": "={{ $json.unlocked }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "insert_skills",
+      "name": "Insert Skills",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "q3KSK8781V4FUxqD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO projects (character_id, title, description, total_xp, coin_reward, difficulty, completed) VALUES ($1, 'Welcome to Your Adventure', 'Complete your first steps in the Land of Growth. Check in your first habit, explore your character stats, and learn how XP and HP work.', 50, 25, 'tutorial', false) RETURNING *",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $('Create Character').item.json.id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "create_tutorial_quest",
+      "name": "Create Tutorial Quest",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "q3KSK8781V4FUxqD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "tutorial_tasks",
+              "name": "tutorialTasks",
+              "value": "={{ [{title: 'View Your Character Stats', xp: 10, coins: 5, difficulty: 'easy'}, {title: 'Create Your First Habit', xp: 15, coins: 10, difficulty: 'easy'}, {title: 'Complete a Habit Check-in', xp: 25, coins: 10, difficulty: 'easy'}] }}",
+              "type": "array"
+            },
+            {
+              "id": "project_id",
+              "name": "projectId",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_tutorial_tasks",
+      "name": "Prepare Tutorial Tasks",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        1250,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "multiplex",
+        "options": {}
+      },
+      "id": "split_tasks",
+      "name": "Split Tasks Array",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO tasks (project_id, title, completed, xp, coins, difficulty) VALUES ($1, $2, false, $3, $4, $5) RETURNING *",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.projectId }}"
+              },
+              {
+                "parameter": "={{ $json.title }}"
+              },
+              {
+                "parameter": "={{ $json.xp }}"
+              },
+              {
+                "parameter": "={{ $json.coins }}"
+              },
+              {
+                "parameter": "={{ $json.difficulty }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "insert_tutorial_tasks",
+      "name": "Insert Tutorial Tasks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1650,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "q3KSK8781V4FUxqD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO settings (user_id, level_xp_formula, overdraft_rule, notification_times, theme) VALUES ($1, '100 * level^1.5', 'Weekly HP -10 if coins < 0', '09:00,18:00', 'default') RETURNING *",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $('Create Character').item.json.user_id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "create_settings",
+      "name": "Create Default Settings",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "q3KSK8781V4FUxqD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "starter_items",
+              "name": "starterItems",
+              "value": "={{ [{item_id: 1, quantity: 1}, {item_id: 2, quantity: 3}] }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_starter_items",
+      "name": "Prepare Starter Items",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        1250,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "multiplex",
+        "options": {}
+      },
+      "id": "split_items",
+      "name": "Split Items Array",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO inventory (character_id, item_id, quantity) VALUES ($1, $2, $3) RETURNING *",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $('Create Character').item.json.id }}"
+              },
+              {
+                "parameter": "={{ $json.item_id }}"
+              },
+              {
+                "parameter": "={{ $json.quantity }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "insert_starter_items",
+      "name": "Insert Starter Items",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1650,
+        700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "q3KSK8781V4FUxqD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO events (character_id, event_type, xp_change, hp_change, coins_change, description) VALUES ($1, 'onboarding', 0, 0, 100, 'Welcome! Your journey begins.') RETURNING *",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $('Create Character').item.json.id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "log_onboarding_event",
+      "name": "Log Onboarding Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1850,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "q3KSK8781V4FUxqD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"system\",\n  \"actor_id\": 0,\n  \"target_type\": \"user\",\n  \"target_id\": $json.user_id,\n  \"action\": \"user_onboarding_complete\",\n  \"detail\": {\n    \"user_setup_complete\": true,\n    \"character_created\": true,\n    \"initial_skills_created\": true\n  },\n  \"outcome\": \"success\",\n  \"severity\": \"info\",\n  \"source\": \"init_user_setup_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_system_event",
+      "name": "Log System Event (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.N8N_WEBHOOK_BASE_URL }}/webhook/create-integrated-system",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "user_id",
+              "value": "={{ $('Create Character').item.json.user_id }}"
+            },
+            {
+              "name": "system_name",
+              "value": "Personal Growth System"
+            },
+            {
+              "name": "category",
+              "value": "mindset"
+            },
+            {
+              "name": "purpose",
+              "value": "Build foundational habits and skills for comprehensive personal growth"
+            },
+            {
+              "name": "description",
+              "value": "Your first integrated self-building system that automatically creates habits and develops skills for personal development."
+            },
+            {
+              "name": "source",
+              "value": "onboarding"
+            }
+          ]
+        },
+        "options": {},
+        "continueOnFail": true
+      },
+      "id": "create_starter_sbs_system",
+      "name": "Create Starter SBS System",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        2050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.N8N_WEBHOOK_BASE_URL }}/webhook/create-routines",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.system_id || 'pending' }}"
+            },
+            {
+              "name": "routines",
+              "value": "={{ [{name: 'Daily Check-in', day_of_week: 'daily', description: 'Start your day by reviewing your goals and planning your priorities', status: 'active'}, {name: 'Evening Reflection', day_of_week: 'daily', description: 'End your day by reflecting on accomplishments and planning tomorrow', status: 'design'}] }}"
+            },
+            {
+              "name": "source",
+              "value": "onboarding"
+            }
+          ]
+        },
+        "options": {},
+        "continueOnFail": true
+      },
+      "id": "create_starter_routines",
+      "name": "Create Starter Routines",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        2050,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "sbs_success",
+              "leftValue": "={{ $json.system_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "routines_created",
+              "leftValue": "={{ $json.routines_created || 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check_sbs_success",
+      "name": "SBS Creation Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2250,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO events (character_id, event_type, description) VALUES ($1, 'sbs_onboarding', $2) RETURNING *",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $('Create Character').item.json.id }}"
+              },
+              {
+                "parameter": "={{ 'Starter SBS system created: ' + ($('Create Starter SBS System').item.json.system_name || 'Getting Started System') + ' with ' + ($('Create Starter Routines').item.json.routines_created || 0) + ' routines' }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "log_sbs_creation",
+      "name": "Log SBS Integration",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2450,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "q3KSK8781V4FUxqD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"success\": true, \"characterId\": $('Create Character').item.json.id, \"starterSystemId\": $('Create Starter SBS System').item.json.system_id, \"message\": \"Account setup complete! Welcome to the Land of Growth. Your first Self-Building System 'Getting Started System' has been created to help you build positive routines.\"} }}",
+        "options": {}
+      },
+      "id": "respond_success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": $node[\"Validate Required Fields\"].json ? \"Missing required fields: user_id and class are required\" : ($json.message || \"Database error during user setup\")\n} }}",
+        "options": {
+          "responseCode": "={{ $node[\"Validate Required Fields\"].json ? 400 : 500 }}"
+        }
+      },
+      "id": "respond_error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2650,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - New User Signup": {
+      "main": [
+        [
+          {
+            "node": "Validate Required Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Required Fields": {
+      "main": [
+        [
+          {
+            "node": "Create Character",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Character": {
+      "main": [
+        [
+          {
+            "node": "Prepare Default Skills",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Tutorial Quest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Default Settings",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Starter SBS System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Default Skills": {
+      "main": [
+        [
+          {
+            "node": "Split Skills Array",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Skills Array": {
+      "main": [
+        [
+          {
+            "node": "Insert Skills",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Skills": {
+      "main": [
+        [
+          {
+            "node": "Log Onboarding Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Tutorial Quest": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tutorial Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Tutorial Tasks": {
+      "main": [
+        [
+          {
+            "node": "Split Tasks Array",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Tasks Array": {
+      "main": [
+        [
+          {
+            "node": "Insert Tutorial Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Default Settings": {
+      "main": [
+        [
+          {
+            "node": "Prepare Starter Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Starter Items": {
+      "main": [
+        [
+          {
+            "node": "Split Items Array",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Items Array": {
+      "main": [
+        [
+          {
+            "node": "Insert Starter Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Starter Items": {
+      "main": [
+        [
+          {
+            "node": "Log Onboarding Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Tutorial Tasks": {
+      "main": [
+        [
+          {
+            "node": "Log Onboarding Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Onboarding Event": {
+      "main": [
+        [
+          {
+            "node": "Log System Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Starter SBS System": {
+      "main": [
+        [
+          {
+            "node": "Create Starter Routines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Starter Routines": {
+      "main": [
+        [
+          {
+            "node": "SBS Creation Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SBS Creation Success?": {
+      "main": [
+        [
+          {
+            "node": "Log SBS Integration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log System Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log SBS Integration": {
+      "main": [
+        [
+          {
+            "node": "Log System Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System Event": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "life-game-production"
+  },
+  "id": "1",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T16:26:02.000Z",
+  "createdAt": "2025-10-30T16:26:02.000Z"
+}

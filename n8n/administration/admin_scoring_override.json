@@ -1,0 +1,1239 @@
+{
+  "name": "ADMIN_SCORING_OVERRIDE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin/adjust-stats",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook - Adjust Stats",
+      "name": "Webhook - Adjust Stats",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        200
+      ],
+      "webhookId": "admin-adjust-stats"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin/unlock-achievement",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook - Unlock Achievement",
+      "name": "Webhook - Unlock Achievement",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        400
+      ],
+      "webhookId": "admin-unlock-achievement"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin/custom-reward",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook - Custom Reward",
+      "name": "Webhook - Custom Reward",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        600
+      ],
+      "webhookId": "admin-custom-reward"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "admin/reset-progress",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook - Reset Progress",
+      "name": "Webhook - Reset Progress",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        800
+      ],
+      "webhookId": "admin-reset-progress"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-validate-input",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"validation_type\": \"admin_auth\", \"data\": $json.body, \"required_fields\": [\"admin_key\"], \"auth_check\": { \"key\": $json.body.admin_key, \"expected\": $env.ADMIN_API_KEY } }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Validate Admin Request (Subflow)",
+      "name": "Validate Admin Request (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation_success",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "Check Validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-data-fetching",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"character_id\": $json.validated_data.character_id || $json.validated_data.target_character, \"user_id\": $json.validated_data.user_id, \"include_skills\": true, \"include_habits\": true, \"include_achievements\": true, \"include_systems\": false }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Get Character Data (Subflow)",
+      "name": "Get Character Data (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_stat_adjustment",
+              "leftValue": "={{ $json.validated_data.character_id && $json.validated_data.action === 'adjust_stats' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "Route Stat Adjustment",
+      "name": "Route Stat Adjustment",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_achievement_unlock",
+              "leftValue": "={{ $json.validated_data.achievement_name && $json.validated_data.action === 'unlock_achievement' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "Route Achievement Unlock",
+      "name": "Route Achievement Unlock",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_custom_reward",
+              "leftValue": "={{ $json.validated_data.reward_name && $json.validated_data.action === 'custom_reward' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "Route Custom Reward",
+      "name": "Route Custom Reward",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_reset_progress",
+              "leftValue": "={{ $json.validated_data.reset_type && $json.validated_data.action === 'reset_progress' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "Route Reset Progress",
+      "name": "Route Reset Progress",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process stat adjustment request\nconst requestData = $('Validate Admin Request (Subflow)').item.json.validated_data;\nconst character = $('Get Character Data (Subflow)').item.json;\n\n// Parse adjustment values with bounds checking\nconst adjustments = {\n  xp: {\n    old: character.xp,\n    change: parseInt(requestData.xp_adjustment) || 0,\n    new: Math.max(0, character.xp + (parseInt(requestData.xp_adjustment) || 0))\n  },\n  coins: {\n    old: character.coins,\n    change: parseInt(requestData.coins_adjustment) || 0,\n    new: Math.max(0, character.coins + (parseInt(requestData.coins_adjustment) || 0))\n  },\n  hp: {\n    old: character.hp,\n    change: parseInt(requestData.hp_adjustment) || 0,\n    new: Math.max(0, Math.min(100, character.hp + (parseInt(requestData.hp_adjustment) || 0)))\n  },\n  level: {\n    old: character.level,\n    change: parseInt(requestData.level_adjustment) || 0,\n    new: Math.max(1, character.level + (parseInt(requestData.level_adjustment) || 0))\n  }\n};\n\n// Admin details\nconst adminUser = requestData.admin_user || 'Unknown Admin';\nconst reason = requestData.reason || 'Admin stat adjustment';\nconst adjustmentType = requestData.adjustment_type || 'manual';\n\n// Create summary of changes\nconst changes = [];\nif (adjustments.xp.change !== 0) changes.push(`XP: ${adjustments.xp.old} → ${adjustments.xp.new} (${adjustments.xp.change > 0 ? '+' : ''}${adjustments.xp.change})`);\nif (adjustments.coins.change !== 0) changes.push(`Coins: ${adjustments.coins.old} → ${adjustments.coins.new} (${adjustments.coins.change > 0 ? '+' : ''}${adjustments.coins.change})`);\nif (adjustments.hp.change !== 0) changes.push(`HP: ${adjustments.hp.old} → ${adjustments.hp.new} (${adjustments.hp.change > 0 ? '+' : ''}${adjustments.hp.change})`);\nif (adjustments.level.change !== 0) changes.push(`Level: ${adjustments.level.old} → ${adjustments.level.new} (${adjustments.level.change > 0 ? '+' : ''}${adjustments.level.change})`);\n\nreturn {\n  json: {\n    character_id: character.id,\n    user_id: character.user_id,\n    adjustments: adjustments,\n    admin_details: {\n      admin_user: adminUser,\n      reason: reason,\n      adjustment_type: adjustmentType\n    },\n    changes_summary: changes.join(', '),\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "Process Stat Adjustments",
+      "name": "Process Stat Adjustments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ],
+      "notes": "ADMIN STAT ADJUSTMENT PROCESSOR\n\nThis code node processes admin requests to manually adjust character statistics (XP, coins, HP, level).\n\nKEY FUNCTIONS:\n1. **Input Validation & Parsing**: Extracts adjustment values from validated admin request data and current character stats\n2. **Bounds Checking**: Applies safety limits (XP/coins >= 0, HP 0-100, level >= 1) to prevent invalid stat values\n3. **Change Tracking**: Calculates old values, changes, and new values for each stat being modified\n4. **Audit Trail**: Captures admin user info, reason for adjustment, and adjustment type for logging\n5. **Summary Generation**: Creates human-readable change descriptions for each modified stat\n\nOUTPUT STRUCTURE:\n- character_id & user_id: Target character identification\n- adjustments: Object containing old/new/change values for each stat\n- admin_details: Who made the change, why, and how\n- changes_summary: Formatted string describing all changes\n- timestamp: When the adjustment was processed\n\nSAFETY FEATURES:\n- Prevents negative XP/coins\n- Limits HP to 0-100 range\n- Ensures level stays >= 1\n- Tracks all changes for audit purposes"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"operation\": \"executeQuery\", \"query\": \"UPDATE characters SET xp = $1, coins = $2, hp = $3, level = $4, updated_at = NOW() WHERE id = $5 RETURNING *\", \"parameters\": [ $json.adjustments.xp.new, $json.adjustments.coins.new, $json.adjustments.hp.new, $json.adjustments.level.new, $json.character_id ], \"return_first_only\": true }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Update Character Stats (Subflow)",
+      "name": "Update Character Stats (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"event_type\": \"admin_stat_adjustment\", \"character_id\": $json.character_id, \"user_id\": $json.user_id, \"details\": { \"admin_user\": $json.admin_details.admin_user, \"reason\": $json.admin_details.reason, \"adjustment_type\": $json.admin_details.adjustment_type, \"old_stats\": { \"xp\": $json.adjustments.xp.old, \"coins\": $json.adjustments.coins.old, \"hp\": $json.adjustments.hp.old, \"level\": $json.adjustments.level.old }, \"new_stats\": { \"xp\": $json.adjustments.xp.new, \"coins\": $json.adjustments.coins.new, \"hp\": $json.adjustments.hp.new, \"level\": $json.adjustments.level.new }, \"changes_summary\": $json.changes_summary } }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Log Stat Adjustment (Subflow)",
+      "name": "Log Stat Adjustment (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"success\": true, \"action\": \"stat_adjustment\", \"character\": { \"id\": $('Update Character Stats (Subflow)').item.json.id, \"user_id\": $('Update Character Stats (Subflow)').item.json.user_id, \"stats\": { \"xp\": $('Update Character Stats (Subflow)').item.json.xp, \"coins\": $('Update Character Stats (Subflow)').item.json.coins, \"hp\": $('Update Character Stats (Subflow)').item.json.hp, \"level\": $('Update Character Stats (Subflow)').item.json.level } }, \"adjustments\": $('Process Stat Adjustments').item.json.adjustments, \"admin_details\": $('Process Stat Adjustments').item.json.admin_details, \"changes_summary\": $('Process Stat Adjustments').item.json.changes_summary, \"message\": \"Character stats adjusted successfully by admin\" }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Respond Stat Success (Subflow)",
+      "name": "Respond Stat Success (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process achievement unlock request\nconst requestData = $('Validate Admin Request (Subflow)').item.json.validated_data;\nconst character = $('Get Character Data (Subflow)').item.json;\n\n// Achievement details\nconst achievementId = requestData.achievement_id || `admin_${Date.now()}`;\nconst achievementName = requestData.achievement_name || 'Custom Achievement';\nconst description = requestData.description || 'Manually unlocked achievement';\nconst category = requestData.category || 'admin';\nconst rarity = requestData.rarity || 'common';\n\n// Rewards\nconst xpReward = parseInt(requestData.xp_reward) || 50;\nconst coinReward = parseInt(requestData.coin_reward) || 25;\nconst specialReward = requestData.special_reward || null;\n\n// Admin details\nconst adminUser = requestData.admin_user || 'Unknown Admin';\nconst reason = requestData.reason || 'Manual achievement unlock';\n\nreturn {\n  json: {\n    character_id: character.id,\n    user_id: character.user_id,\n    achievement: {\n      id: achievementId,\n      name: achievementName,\n      description: description,\n      category: category,\n      rarity: rarity,\n      xp_reward: xpReward,\n      coin_reward: coinReward,\n      special_reward: specialReward\n    },\n    admin_details: {\n      admin_user: adminUser,\n      reason: reason,\n      unlock_type: 'manual_admin'\n    },\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "Process Achievement Unlock",
+      "name": "Process Achievement Unlock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        400
+      ],
+      "notes": "ADMIN ACHIEVEMENT UNLOCK PROCESSOR\n\nThis code node processes admin requests to manually unlock achievements for characters.\n\nKEY FUNCTIONS:\n1. **Achievement Definition**: Creates achievement details with ID generation, name, description, category, and rarity\n2. **Auto-ID Generation**: Generates unique achievement IDs using timestamp if not provided (admin_[timestamp])\n3. **Reward Configuration**: Sets XP rewards (default 50), coin rewards (default 25), and special rewards\n4. **Category Classification**: Categorizes achievement as 'admin' type with configurable rarity levels\n5. **Admin Tracking**: Records which admin granted the achievement and the reason\n\nINPUT PROCESSING:\n- Uses validated admin request data and character information\n- Supports custom achievement properties or applies sensible defaults\n- Handles optional special rewards for unique achievement types\n\nOUTPUT STRUCTURE:\n- character_id & user_id: Target character identification\n- achievement: Complete achievement object with all properties\n- admin_details: Audit trail showing who unlocked it and why\n- unlock_type: Always set to 'manual_admin' for tracking\n- timestamp: When the achievement was processed\n\nDEFAULTS APPLIED:\n- ID: auto-generated if not provided\n- Name: 'Custom Achievement'\n- Description: 'Manually unlocked achievement'\n- Category: 'admin'\n- Rarity: 'common'\n- XP Reward: 50\n- Coin Reward: 25"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"operation\": \"executeQuery\", \"query\": \"INSERT INTO achievements (character_id, achievement_id, name, description, category, rarity, xp_reward, coin_reward, special_reward, unlocked_at, unlock_type, unlocked_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 'manual_admin', $10) ON CONFLICT (character_id, achievement_id) DO NOTHING RETURNING *\", \"parameters\": [ $json.character_id, $json.achievement.id, $json.achievement.name, $json.achievement.description, $json.achievement.category, $json.achievement.rarity, $json.achievement.xp_reward, $json.achievement.coin_reward, $json.achievement.special_reward, $json.admin_details.admin_user ], \"return_first_only\": true }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Create Achievement Record (Subflow)",
+      "name": "Create Achievement Record (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-level-progression",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"character_id\": $json.character_id, \"xp_gained\": $json.achievement.xp_reward, \"trigger_achievements\": true, \"source\": \"admin_achievement_unlock\" }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Award Achievement XP (Progression)",
+      "name": "Award Achievement XP (Progression)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"operation\": \"executeQuery\", \"query\": \"UPDATE characters SET coins = coins + $1 WHERE id = $2 RETURNING *\", \"parameters\": [ $('Process Achievement Unlock').item.json.achievement.coin_reward, $('Process Achievement Unlock').item.json.character_id ], \"return_first_only\": true }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Award Achievement Coins (Subflow)",
+      "name": "Award Achievement Coins (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"success\": true, \"action\": \"achievement_unlock\", \"achievement\": { \"id\": $('Create Achievement Record (Subflow)').item.json.achievement_id, \"name\": $('Create Achievement Record (Subflow)').item.json.name, \"description\": $('Create Achievement Record (Subflow)').item.json.description, \"category\": $('Create Achievement Record (Subflow)').item.json.category, \"rarity\": $('Create Achievement Record (Subflow)').item.json.rarity, \"unlocked_at\": $('Create Achievement Record (Subflow)').item.json.unlocked_at }, \"rewards\": { \"xp\": $('Process Achievement Unlock').item.json.achievement.xp_reward, \"coins\": $('Process Achievement Unlock').item.json.achievement.coin_reward, \"special\": $('Process Achievement Unlock').item.json.achievement.special_reward }, \"character_progression\": $('Award Achievement XP (Progression)').item.json, \"admin_details\": $('Process Achievement Unlock').item.json.admin_details, \"message\": \"Achievement unlocked successfully!\" }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Respond Achievement Success (Subflow)",
+      "name": "Respond Achievement Success (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process custom reward request\nconst requestData = $('Validate Admin Request (Subflow)').item.json.validated_data;\nconst character = $('Get Character Data (Subflow)').item.json;\n\n// Reward details\nconst rewardType = requestData.reward_type || 'custom';\nconst rewardName = requestData.reward_name || 'Custom Reward';\nconst description = requestData.description || 'Special admin-granted reward';\n\n// Reward values\nconst xpReward = parseInt(requestData.xp_reward) || 0;\nconst coinReward = parseInt(requestData.coin_reward) || 0;\nconst itemReward = requestData.item_reward || null;\nconst skillUnlock = requestData.skill_unlock || null;\nconst specialEffect = requestData.special_effect || null;\n\n// Duration and conditions\nconst duration = requestData.duration || null;\nconst conditions = requestData.conditions || null;\n\n// Admin details\nconst adminUser = requestData.admin_user || 'Unknown Admin';\nconst reason = requestData.reason || 'Custom reward assignment';\n\n// Generate unique reward ID\nconst rewardId = `admin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n\nreturn {\n  json: {\n    character_id: character.id,\n    user_id: character.user_id,\n    reward: {\n      id: rewardId,\n      type: rewardType,\n      name: rewardName,\n      description: description,\n      xp_reward: xpReward,\n      coin_reward: coinReward,\n      item_reward: itemReward,\n      skill_unlock: skillUnlock,\n      special_effect: specialEffect,\n      duration: duration,\n      conditions: conditions\n    },\n    admin_details: {\n      admin_user: adminUser,\n      reason: reason,\n      grant_type: 'custom_admin'\n    },\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "Process Custom Reward",
+      "name": "Process Custom Reward",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        600
+      ],
+      "notes": "ADMIN CUSTOM REWARD PROCESSOR\n\nThis code node processes admin requests to grant custom, flexible rewards to characters beyond standard achievements.\n\nKEY FUNCTIONS:\n1. **Flexible Reward Creation**: Supports multiple reward types (XP, coins, items, skill unlocks, special effects)\n2. **Unique ID Generation**: Creates collision-resistant reward IDs using timestamp + random string\n3. **Multi-Type Rewards**: Handles traditional rewards (XP/coins) and advanced rewards (items, skills, effects)\n4. **Conditional Rewards**: Supports duration-limited and condition-based rewards\n5. **Admin Accountability**: Tracks who granted the reward and why\n\nREWARD TYPES SUPPORTED:\n- XP & Coin rewards (numeric values)\n- Item rewards (item names/IDs)\n- Skill unlocks (skill identifiers)\n- Special effects (custom effect descriptions)\n- Duration-based rewards (temporary bonuses)\n- Conditional rewards (requirements for activation)\n\nINPUT PROCESSING:\n- Uses validated admin request data and character information\n- Applies default values for missing reward properties\n- Supports complex reward configurations\n\nOUTPUT STRUCTURE:\n- character_id & user_id: Target character identification\n- reward: Complete reward object with all properties and unique ID\n- admin_details: Audit trail showing who granted it and why\n- grant_type: Always 'custom_admin' for tracking\n- timestamp: When the reward was processed\n\nDEFAULTS APPLIED:\n- Type: 'custom'\n- Name: 'Custom Reward'\n- Description: 'Special admin-granted reward'\n- XP/Coin rewards: 0 (must be explicitly set)\n- Special rewards: null (optional)"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"operation\": \"executeQuery\", \"query\": \"INSERT INTO custom_rewards (character_id, reward_id, reward_type, name, description, xp_reward, coin_reward, item_reward, skill_unlock, special_effect, duration, conditions, granted_by, granted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW()) RETURNING *\", \"parameters\": [ $json.character_id, $json.reward.id, $json.reward.type, $json.reward.name, $json.reward.description, $json.reward.xp_reward, $json.reward.coin_reward, $json.reward.item_reward, $json.reward.skill_unlock, $json.reward.special_effect, $json.reward.duration, $json.reward.conditions, $json.admin_details.admin_user ], \"return_first_only\": true }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Create Custom Reward (Subflow)",
+      "name": "Create Custom Reward (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has_xp_coins",
+              "leftValue": "={{ ($json.reward.xp_reward || 0) + ($json.reward.coin_reward || 0) }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "Check XP/Coin Rewards",
+      "name": "Check XP/Coin Rewards",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-level-progression",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"character_id\": $('Process Custom Reward').item.json.character_id, \"xp_gained\": $('Process Custom Reward').item.json.reward.xp_reward || 0, \"trigger_achievements\": true, \"source\": \"admin_custom_reward\" }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Apply Reward XP (Progression)",
+      "name": "Apply Reward XP (Progression)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        550
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"operation\": \"executeQuery\", \"query\": \"UPDATE characters SET coins = coins + $1 WHERE id = $2 RETURNING *\", \"parameters\": [ $('Process Custom Reward').item.json.reward.coin_reward || 0, $('Process Custom Reward').item.json.character_id ], \"return_first_only\": true }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Apply Reward Coins (Subflow)",
+      "name": "Apply Reward Coins (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"success\": true, \"action\": \"custom_reward\", \"reward\": { \"id\": $('Create Custom Reward (Subflow)').item.json.reward_id, \"name\": $('Create Custom Reward (Subflow)').item.json.name, \"type\": $('Create Custom Reward (Subflow)').item.json.reward_type, \"description\": $('Create Custom Reward (Subflow)').item.json.description }, \"rewards_applied\": { \"xp\": $('Process Custom Reward').item.json.reward.xp_reward, \"coins\": $('Process Custom Reward').item.json.reward.coin_reward, \"item\": $('Process Custom Reward').item.json.reward.item_reward, \"skill_unlocked\": $('Process Custom Reward').item.json.reward.skill_unlock }, \"admin_details\": $('Process Custom Reward').item.json.admin_details, \"message\": \"Custom reward granted successfully!\" }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Respond Reward Success (Subflow)",
+      "name": "Respond Reward Success (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process progress reset request\nconst requestData = $('Validate Admin Request (Subflow)').item.json.validated_data;\nconst character = $('Get Character Data (Subflow)').item.json;\n\n// Reset options\nconst resetType = requestData.reset_type || 'partial';\nconst resetScope = requestData.reset_scope || ['habits'];\nconst preserveLevel = requestData.preserve_level !== false;\nconst preserveCoins = requestData.preserve_coins !== false;\n\n// Admin details\nconst adminUser = requestData.admin_user || 'Unknown Admin';\nconst reason = requestData.reason || 'Progress reset';\nconst confirmationCode = requestData.confirmation_code || '';\n\n// Safety check for major resets\nconst requiresConfirmation = resetScope.includes('all') || resetScope.includes('achievements');\nconst validConfirmation = confirmationCode === `RESET_${character.id}_${new Date().getDate()}`;\n\nif (requiresConfirmation && !validConfirmation) {\n  throw new Error(`Reset confirmation required. Use code: RESET_${character.id}_${new Date().getDate()}`);\n}\n\n// Determine what to reset\nconst resetActions = {\n  habits: resetScope.includes('habits') || resetScope.includes('all'),\n  skills: resetScope.includes('skills') || resetScope.includes('all'),\n  achievements: resetScope.includes('achievements') || resetScope.includes('all'),\n  systems: resetScope.includes('systems') || resetScope.includes('all'),\n  character_stats: resetScope.includes('character') || resetScope.includes('all')\n};\n\n// Character stat resets\nconst newStats = {\n  xp: preserveLevel ? character.xp : 0,\n  level: preserveLevel ? character.level : 1,\n  coins: preserveCoins ? character.coins : 100,\n  hp: 100\n};\n\nreturn {\n  json: {\n    character_id: character.id,\n    user_id: character.user_id,\n    reset_config: {\n      type: resetType,\n      scope: resetScope,\n      actions: resetActions,\n      preserve_level: preserveLevel,\n      preserve_coins: preserveCoins\n    },\n    new_stats: newStats,\n    admin_details: {\n      admin_user: adminUser,\n      reason: reason,\n      confirmation_used: validConfirmation\n    },\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "Process Progress Reset",
+      "name": "Process Progress Reset",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        800
+      ],
+      "notes": "ADMIN PROGRESS RESET PROCESSOR\n\nThis code node processes admin requests to reset character progress with granular control and safety mechanisms.\n\nKEY FUNCTIONS:\n1. **Granular Reset Control**: Supports selective reset of habits, skills, achievements, systems, or character stats\n2. **Safety Confirmation**: Requires confirmation codes for destructive resets (achievements, all progress)\n3. **Preservation Options**: Allows preserving level and coins while resetting other progress\n4. **Scope Configuration**: Defines exactly what gets reset based on admin-specified scope\n5. **Audit Trail**: Comprehensive logging of what was reset, by whom, and why\n\nRESET TYPES SUPPORTED:\n- habits: Reset streaks, completion status, last completed dates\n- skills: Reset skill XP and levels (except core skills)\n- achievements: Reset unlocked achievements\n- systems: Reset SBS system progress\n- character: Reset character stats (with preservation options)\n- all: Complete progress reset (requires confirmation)\n\nSAFETY MECHANISMS:\n- Confirmation codes required for major resets\n- Level preservation option (maintains XP if enabled)\n- Coin preservation option (prevents economic loss)\n- HP always reset to 100 (full health)\n- Error throwing for invalid confirmation codes\n\nCONFIRMATION SYSTEM:\n- Required for 'all' or 'achievements' resets\n- Format: RESET_{character_id}_{day_of_month}\n- Daily changing codes prevent accidental resets\n\nOUTPUT STRUCTURE:\n- character_id & user_id: Target character identification\n- reset_config: Complete configuration of what was reset\n- new_stats: Character stats after reset\n- admin_details: Who performed reset, reason, confirmation status\n- timestamp: When the reset was processed\n\nDEFAULTS APPLIED:\n- Reset type: 'partial'\n- Reset scope: ['habits'] (least destructive)\n- Preserve level: true\n- Preserve coins: true\n- New HP: 100 (full health)"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"operation\": \"executeQuery\", \"query\": \"UPDATE characters SET xp = $1, level = $2, coins = $3, hp = $4, updated_at = NOW() WHERE id = $5 RETURNING *\", \"parameters\": [ $json.new_stats.xp, $json.new_stats.level, $json.new_stats.coins, $json.new_stats.hp, $json.character_id ], \"return_first_only\": true }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Apply Character Reset (Subflow)",
+      "name": "Apply Character Reset (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "reset_habits_check",
+              "leftValue": "={{ $json.reset_config.actions.habits }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "Check Reset Habits",
+      "name": "Check Reset Habits",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        750
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"operation\": \"executeQuery\", \"query\": \"UPDATE habits SET streak = 0, completed_today = false, last_completed = NULL WHERE character_id = $1\", \"parameters\": [ $('Process Progress Reset').item.json.character_id ], \"return_first_only\": false }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Reset Habits (Subflow)",
+      "name": "Reset Habits (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        750
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "reset_skills_check",
+              "leftValue": "={{ $json.reset_config.actions.skills }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "Check Reset Skills",
+      "name": "Check Reset Skills",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        850
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"operation\": \"executeQuery\", \"query\": \"UPDATE skills SET xp = 0, level = 1 WHERE character_id = $1 AND unlocked_by != 'core'\", \"parameters\": [ $('Process Progress Reset').item.json.character_id ], \"return_first_only\": false }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Reset Skills (Subflow)",
+      "name": "Reset Skills (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        850
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"event_type\": \"admin_progress_reset\", \"character_id\": $json.character_id, \"user_id\": $json.user_id, \"details\": { \"admin_user\": $json.admin_details.admin_user, \"reason\": $json.admin_details.reason, \"reset_type\": $json.reset_config.type, \"reset_scope\": $json.reset_config.scope, \"actions_performed\": $json.reset_config.actions, \"new_stats\": $json.new_stats } }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Log Progress Reset (Subflow)",
+      "name": "Log Progress Reset (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"success\": true, \"action\": \"progress_reset\", \"character\": { \"id\": $('Apply Character Reset (Subflow)').item.json.id, \"user_id\": $('Apply Character Reset (Subflow)').item.json.user_id, \"new_stats\": { \"xp\": $('Apply Character Reset (Subflow)').item.json.xp, \"level\": $('Apply Character Reset (Subflow)').item.json.level, \"coins\": $('Apply Character Reset (Subflow)').item.json.coins, \"hp\": $('Apply Character Reset (Subflow)').item.json.hp } }, \"reset_details\": $('Process Progress Reset').item.json.reset_config, \"admin_details\": $('Process Progress Reset').item.json.admin_details, \"message\": \"Progress reset completed successfully by admin\" }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Respond Reset Success (Subflow)",
+      "name": "Respond Reset Success (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"success\": false, \"error\": \"Unauthorized: Invalid admin key\", \"message\": \"Admin authentication failed\" }",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Respond Unauthorized (Subflow)",
+      "name": "Respond Unauthorized (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        1000
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Adjust Stats": {
+      "main": [
+        [
+          {
+            "node": "Validate Admin Request (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Unlock Achievement": {
+      "main": [
+        [
+          {
+            "node": "Validate Admin Request (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Custom Reward": {
+      "main": [
+        [
+          {
+            "node": "Validate Admin Request (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Reset Progress": {
+      "main": [
+        [
+          {
+            "node": "Validate Admin Request (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Admin Request (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Get Character Data (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Character Data (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Route Stat Adjustment",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route Achievement Unlock",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route Custom Reward",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route Reset Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Stat Adjustment": {
+      "main": [
+        [
+          {
+            "node": "Process Stat Adjustments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Achievement Unlock": {
+      "main": [
+        [
+          {
+            "node": "Process Achievement Unlock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Stat Adjustments": {
+      "main": [
+        [
+          {
+            "node": "Update Character Stats (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Character Stats (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Log Stat Adjustment (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Stat Adjustment (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Respond Stat Success (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Achievement Unlock": {
+      "main": [
+        [
+          {
+            "node": "Create Achievement Record (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Achievement Record (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Award Achievement XP (Progression)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Award Achievement XP (Progression)": {
+      "main": [
+        [
+          {
+            "node": "Award Achievement Coins (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Award Achievement Coins (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Respond Achievement Success (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Custom Reward": {
+      "main": [
+        [
+          {
+            "node": "Process Custom Reward",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Reset Progress": {
+      "main": [
+        [
+          {
+            "node": "Process Progress Reset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Custom Reward": {
+      "main": [
+        [
+          {
+            "node": "Create Custom Reward (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Custom Reward (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Check XP/Coin Rewards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check XP/Coin Rewards": {
+      "main": [
+        [
+          {
+            "node": "Apply Reward XP (Progression)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Apply Reward Coins (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Reward Success (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Reward XP (Progression)": {
+      "main": [
+        [
+          {
+            "node": "Respond Reward Success (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Reward Coins (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Respond Reward Success (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Progress Reset": {
+      "main": [
+        [
+          {
+            "node": "Apply Character Reset (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Character Reset (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Check Reset Habits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Reset Skills",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Reset Habits": {
+      "main": [
+        [
+          {
+            "node": "Reset Habits (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Progress Reset (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Habits (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Log Progress Reset (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Reset Skills": {
+      "main": [
+        [
+          {
+            "node": "Reset Skills (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Progress Reset (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Skills (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Log Progress Reset (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Progress Reset (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Respond Reset Success (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "admin-scoring-override",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

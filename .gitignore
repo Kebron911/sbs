@@ -1,0 +1,55 @@
+# Environment files
+.env
+
+# Data directories - exclude actual data but keep structure
+data/postgres/*
+!data/postgres/.gitkeep
+data/n8n/*
+!data/n8n/.gitkeep
+data/redis/*
+!data/redis/.gitkeep
+
+# Log files - exclude logs but keep structure
+logs/pg-listener/*
+!logs/pg-listener/.gitkeep
+
+# Backup files - exclude backups but keep structure
+backups/n8n/*
+!backups/n8n/.gitkeep
+
+# SSL Certificates - exclude sensitive certs but keep structure
+certs/*.pem
+certs/*.crt
+certs/*.key
+!certs/.gitkeep
+!certs/README.md
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Node modules
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Temporary Office files
+~$*

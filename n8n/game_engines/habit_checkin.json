@@ -1,0 +1,555 @@
+﻿{
+  "name": "HABIT_CHECKIN",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "habit-checkin",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_habit_checkin",
+      "name": "Webhook - Habit Check-in",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "habit-checkin"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT h.*, s.level as skill_level, c.level as character_level, c.id as character_id FROM habits h JOIN skills s ON h.skill_id = s.id JOIN characters c ON h.character_id = c.id WHERE h.id = $1",
+        "options": {}
+      },
+      "id": "fetch_habit_data",
+      "name": "Fetch Habit & Character Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if this is a bad habit and trigger battle if needed\nconst habitData = $input.first().json;\nconst habitType = habitData.type || 'good';\nconst isBadHabit = habitType === 'bad';\n\nreturn {\n  json: {\n    habit_id: habitData.id,\n    character_id: habitData.character_id,\n    habit_type: habitType,\n    is_bad_habit: isBadHabit,\n    habit_name: habitData.name,\n    habit_data: habitData\n  }\n};"
+      },
+      "id": "check_habit_type",
+      "name": "Check Habit Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "bad_habit_check",
+              "leftValue": "={{ $('Check Habit Type').item.json.is_bad_habit }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "if_bad_habit",
+      "name": "If Bad Habit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/bad-habit-battle",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "habit_id",
+              "value": "={{ $('Check Habit Type').item.json.habit_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_bad_habit_battle",
+      "name": "Trigger Bad Habit Battle",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate rewards with streak multipliers\nconst habitData = $('Fetch Habit & Character Data').first().json;\nconst baseXP = habitData.xp_value || 10;\nconst baseCoins = Math.floor(baseXP * 0.5);\nconst currentStreak = habitData.streak || 0;\nconst lastCompleted = habitData.last_completed;\nconst today = new Date().toISOString().split('T')[0];\n\n// Check if completed today already\nif (lastCompleted === today) {\n  return [{\n    json: {\n      alreadyCompleted: true,\n      message: \"Habit already completed today\"\n    }\n  }];\n}\n\n// Calculate streak bonus\nlet newStreak = currentStreak + 1;\nlet streakMultiplier = 1.0;\n\nif (newStreak >= 7) streakMultiplier = 1.5;\nelse if (newStreak >= 30) streakMultiplier = 2.0;\nelse if (newStreak >= 90) streakMultiplier = 3.0;\n\nconst finalXP = Math.floor(baseXP * streakMultiplier);\nconst finalCoins = Math.floor(baseCoins * streakMultiplier);\n\n// Skill XP calculation (40% of habit XP)\nconst skillXP = Math.floor(finalXP * 0.4);\n\nreturn [{\n  json: {\n    habitId: habitData.id,\n    characterId: habitData.character_id,\n    skillId: habitData.skill_id,\n    xpEarned: finalXP,\n    coinsEarned: finalCoins,\n    skillXPEarned: skillXP,\n    newStreak: newStreak,\n    streakMultiplier: streakMultiplier,\n    alreadyCompleted: false\n  }\n}];"
+      },
+      "id": "calculate_rewards",
+      "name": "Calculate Rewards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.alreadyCompleted }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check_already_completed",
+      "name": "Already Completed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"UPDATE habits SET streak = $1, last_completed = CURRENT_DATE WHERE id = $2 RETURNING *\",\n  \"parameters\": [\n    $('Calculate Streak').item.json.new_streak,\n    $('Check Habit Type').item.json.habit_id\n  ],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "update_habit_streak",
+      "name": "Update Habit Streak (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-character-progression",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $('Calculate Rewards').item.json.characterId }}"
+            },
+            {
+              "name": "skill_id",
+              "value": "={{ $('Calculate Rewards').item.json.skillId }}"
+            },
+            {
+              "name": "xp_gained",
+              "value": "={{ $('Calculate Rewards').item.json.xpEarned }}"
+            },
+            {
+              "name": "coins_gained",
+              "value": "={{ $('Calculate Rewards').item.json.coinsEarned }}"
+            },
+            {
+              "name": "skill_xp_gained",
+              "value": "={{ $('Calculate Rewards').item.json.skillXPEarned }}"
+            },
+            {
+              "name": "progression_type",
+              "value": "habit_completion"
+            },
+            {
+              "name": "source_name",
+              "value": "={{ $('Check Habit Type').item.json.habit_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update_character_progression",
+      "name": "Update Character Progression",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "prestige_eligible_check",
+              "leftValue": "={{ $('Update Character Progression').item.json.prestige_eligible }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "if_prestige_eligible",
+      "name": "If Prestige Eligible",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/prestige-eligibility",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $('Update Character Progression').item.json.character_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_prestige_check",
+      "name": "Trigger Prestige Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2050, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-achievement-check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $('Update Character Progression').item.json.character_id }}"
+            },
+            {
+              "name": "trigger_reason",
+              "value": "Habit completion achievement check"
+            },
+            {
+              "name": "event_data",
+              "value": "={{ {\n  trigger_source: 'habit_completion',\n  habit_data: $json\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_habit_achievements",
+      "name": "Trigger SBS Achievement Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Update Habit Streak').item.json.character_id,\n  \"event_type\": \"habit_completed\",\n  \"xp_change\": $('Calculate Rewards').item.json.xp_gained,\n  \"coins_change\": $('Calculate Rewards').item.json.coins_gained,\n  \"description\": \"Habit completed: \" + $('Update Habit Streak').item.json.name + \" (streak: \" + $('Update Habit Streak').item.json.streak + \")\"\n} }}",
+        "options": {}
+      },
+      "id": "log_habit_event",
+      "name": "Log Habit Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2.4,
+      "position": [1650, 200],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"user\",\n  \"actor_id\": $json.character_id,\n  \"target_type\": \"habit\",\n  \"target_id\": $json.habit_id,\n  \"action\": \"habit_checkin\",\n  \"detail\": {\n    \"streak_count\": $json.streak_count,\n    \"xp_gained\": $json.xp_gained,\n    \"coins_gained\": $json.coins_gained,\n    \"skill_level\": $json.skill_level\n  },\n  \"outcome\": \"success\",\n  \"severity\": \"info\",\n  \"source\": \"habit_checkin_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_system",
+      "name": "Log System (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"xpEarned\": $('Calculate Rewards').item.json.xpEarned,\n  \"coinsEarned\": $('Calculate Rewards').item.json.coinsEarned,\n  \"newStreak\": $('Calculate Rewards').item.json.newStreak,\n  \"streakBonus\": $('Calculate Rewards').item.json.streakMultiplier,\n  \"message\": \"Great work! Keep the momentum going!\"\n} }}",
+        "options": {}
+      },
+      "id": "respond_success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"success\": false, \"message\": $json.message} }}",
+        "options": {}
+      },
+      "id": "respond_already_done",
+      "name": "Respond Already Done",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1650, 500]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Habit Check-in": {
+      "main": [
+        [
+          {
+            "node": "Fetch Habit & Character Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Habit & Character Data": {
+      "main": [
+        [
+          {
+            "node": "Check Habit Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Habit Type": {
+      "main": [
+        [
+          {
+            "node": "If Bad Habit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Bad Habit": {
+      "main": [
+        [
+          {
+            "node": "Trigger Bad Habit Battle",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Calculate Rewards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Bad Habit Battle": {
+      "main": [
+        [
+          {
+            "node": "Calculate Rewards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Rewards": {
+      "main": [
+        [
+          {
+            "node": "Already Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Completed?": {
+      "main": [
+        [
+          {
+            "node": "Respond Already Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Habit Streak",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Habit Streak": {
+      "main": [
+        [
+          {
+            "node": "Update Character Progression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Character Progression": {
+      "main": [
+        [
+          {
+            "node": "If Prestige Eligible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Prestige Eligible": {
+      "main": [
+        [
+          {
+            "node": "Trigger Prestige Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Trigger Prestige Check": {
+      "main": [
+        [
+          {
+            "node": "Log Habit Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Habit Event": {
+      "main": [
+        [
+          {
+            "node": "Trigger SBS Achievement Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger SBS Achievement Check": {
+      "main": [
+        [
+          {
+            "node": "Log System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "life-game-production"
+  },
+  "id": "2",
+  "tags": []
+}

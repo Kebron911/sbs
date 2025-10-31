@@ -1,0 +1,247 @@
+{
+  "name": "SUBFLOW: Log Event",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-log-event",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_log_event",
+      "name": "Webhook - Log Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-log-event"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "character_id_check",
+              "leftValue": "={{ $json.body.character_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "event_type_check",
+              "leftValue": "={{ $json.body.event_type }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate_event_data",
+      "name": "Validate Event Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "character_id",
+              "name": "character_id",
+              "value": "={{ $json.body.character_id }}",
+              "type": "number"
+            },
+            {
+              "id": "event_type",
+              "name": "event_type",
+              "value": "={{ $json.body.event_type }}",
+              "type": "string"
+            },
+            {
+              "id": "description",
+              "name": "description",
+              "value": "={{ $json.body.description || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "xp_change",
+              "name": "xp_change",
+              "value": "={{ $json.body.xp_change || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "hp_change",
+              "name": "hp_change",
+              "value": "={{ $json.body.hp_change || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "coins_change",
+              "name": "coins_change",
+              "value": "={{ $json.body.coins_change || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "metadata",
+              "name": "metadata",
+              "value": "={{ $json.body.metadata || null }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_event_data",
+      "name": "Prepare Event Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        650,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO events (character_id, event_type, description, xp_change, hp_change, coins_change, metadata, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *",
+        "options": {}
+      },
+      "id": "insert_event",
+      "name": "Insert Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        850,
+        250
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"event_id\": $('Insert Event').item.json.id, \"logged_at\": $('Insert Event').item.json.created_at, \"event_type\": $('Insert Event').item.json.event_type } }}",
+        "options": {}
+      },
+      "id": "respond_success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": false, \"error\": \"Missing required fields: character_id and event_type are required\" } }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "respond_error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        650,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "webhook_log_event": {
+      "main": [
+        [
+          {
+            "node": "validate_event_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate_event_data": {
+      "main": [
+        [
+          {
+            "node": "prepare_event_data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "respond_error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare_event_data": {
+      "main": [
+        [
+          {
+            "node": "insert_event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "insert_event": {
+      "main": [
+        [
+          {
+            "node": "respond_success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "subflow-log-event",
+  "tags": [
+    "subflow",
+    "logging",
+    "reusable"
+  ],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

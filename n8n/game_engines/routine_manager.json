@@ -1,0 +1,1375 @@
+{
+  "name": "ROUTINE_MANAGER",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "routine/create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_create_routine",
+      "name": "Webhook - Create Routine",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "create-routine"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "routine/update",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_update_routine",
+      "name": "Webhook - Update Routine",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 500],
+      "webhookId": "update-routine"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "routine/complete",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_complete_routine",
+      "name": "Webhook - Complete Routine",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 700],
+      "webhookId": "complete-routine"
+    },
+    {
+      "parameters": {
+        "httpMethod": "DELETE",
+        "path": "routine/delete",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_delete_routine",
+      "name": "Webhook - Delete Routine",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 900],
+      "webhookId": "delete-routine"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and process routine creation data\nconst requestData = $json.body;\n\n// Required fields validation\nconst requiredFields = ['system_id', 'name', 'day_of_week'];\nconst missingFields = requiredFields.filter(field => !requestData[field]);\n\nif (missingFields.length > 0) {\n  return [{\n    json: {\n      success: false,\n      error: `Missing required fields: ${missingFields.join(', ')}`,\n      statusCode: 400\n    }\n  }];\n}\n\n// Validate day_of_week\nconst validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'daily'];\nif (!validDays.includes(requestData.day_of_week)) {\n  return [{\n    json: {\n      success: false,\n      error: 'Invalid day_of_week. Must be one of: ' + validDays.join(', '),\n      statusCode: 400\n    }\n  }];\n}\n\n// Process and clean data\nconst routineData = {\n  system_id: parseInt(requestData.system_id),\n  name: requestData.name.trim(),\n  description: requestData.description || '',\n  day_of_week: requestData.day_of_week,\n  time_of_day: requestData.time_of_day || 'morning',\n  estimated_duration: parseInt(requestData.estimated_duration) || 30,\n  priority: requestData.priority || 'medium',\n  automated: requestData.automated || false,\n  status: 'active',\n  streak: 0,\n  last_completed: null,\n  created_at: new Date().toISOString()\n};\n\nreturn [{\n  json: routineData\n}];"
+      },
+      "id": "validate_create_routine",
+      "name": "Validate Create Routine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation_success",
+              "leftValue": "={{ $('Validate Create Routine').item.json.success }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_validation_create",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, category, current_stage FROM systems WHERE id = $1 AND current_stage != 'complete'",
+        "options": {}
+      },
+      "id": "verify_system_create",
+      "name": "Verify System Exists",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 200],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "system_exists",
+              "leftValue": "={{ $('Verify System Exists').item.json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_system_exists_create",
+      "name": "Check System Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO routines (system_id, name, description, day_of_week, time_of_day, estimated_duration, priority, automated, status, streak, last_completed, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW()) RETURNING *",
+        "options": {}
+      },
+      "id": "insert_routine",
+      "name": "Insert Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1250, 100],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Insert Routine').item.json.system_id }}"
+            },
+            {
+              "name": "event",
+              "value": "routine_created"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  routine_id: $('Insert Routine').item.json.id,\n  routine_name: $('Insert Routine').item.json.name,\n  day_of_week: $('Insert Routine').item.json.day_of_week,\n  created_by: 'api',\n  created_at: new Date().toISOString()\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log_routine_created",
+      "name": "Log Routine Created (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1450, 100],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-trigger-skill-progression",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Insert Routine').item.json.system_id }}"
+            },
+            {
+              "name": "progression_type",
+              "value": "routine_creation"
+            },
+            {
+              "name": "source",
+              "value": "routine_manager"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_skill_progression_create",
+      "name": "Trigger Skill Progression (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 100],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"routine\": {\n    \"id\": $('Insert Routine').item.json.id,\n    \"name\": $('Insert Routine').item.json.name,\n    \"system_id\": $('Insert Routine').item.json.system_id,\n    \"system_name\": $('Verify System Exists').item.json.name,\n    \"day_of_week\": $('Insert Routine').item.json.day_of_week,\n    \"description\": $('Insert Routine').item.json.description,\n    \"time_of_day\": $('Insert Routine').item.json.time_of_day,\n    \"estimated_duration\": $('Insert Routine').item.json.estimated_duration,\n    \"priority\": $('Insert Routine').item.json.priority,\n    \"status\": $('Insert Routine').item.json.status,\n    \"created_at\": $('Insert Routine').item.json.created_at\n  },\n  \"message\": \"Routine created successfully and integrated with SBS system\"\n} }}",
+        "options": {}
+      },
+      "id": "respond_create_success",
+      "name": "Respond Create Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1850, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"System not found or already completed\",\n  \"message\": \"The specified system_id does not exist or the system is already completed\"\n} }}",
+        "options": {
+          "responseCode": "404"
+        }
+      },
+      "id": "respond_system_not_found",
+      "name": "Respond System Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": $('Validate Create Routine').item.json.error\n} }}",
+        "options": {
+          "responseCode": "={{ $('Validate Create Routine').item.json.statusCode || 400 }}"
+        }
+      },
+      "id": "respond_validation_error",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and process routine update data\nconst requestData = $json.body;\n\n// Required field validation\nif (!requestData.routine_id) {\n  return [{\n    json: {\n      success: false,\n      error: 'Missing required field: routine_id',\n      statusCode: 400\n    }\n  }];\n}\n\n// Validate day_of_week if provided\nif (requestData.day_of_week) {\n  const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'daily'];\n  if (!validDays.includes(requestData.day_of_week)) {\n    return [{\n      json: {\n        success: false,\n        error: 'Invalid day_of_week. Must be one of: ' + validDays.join(', '),\n        statusCode: 400\n      }\n    }];\n  }\n}\n\n// Validate status if provided\nif (requestData.status && !['active', 'paused', 'archived'].includes(requestData.status)) {\n  return [{\n    json: {\n      success: false,\n      error: 'Invalid status. Must be one of: active, paused, archived',\n      statusCode: 400\n    }\n  }];\n}\n\n// Build update data\nconst updateData = {\n  routine_id: parseInt(requestData.routine_id)\n};\n\n// Add fields to update if provided\nif (requestData.name) updateData.name = requestData.name.trim();\nif (requestData.description !== undefined) updateData.description = requestData.description;\nif (requestData.day_of_week) updateData.day_of_week = requestData.day_of_week;\nif (requestData.time_of_day) updateData.time_of_day = requestData.time_of_day;\nif (requestData.estimated_duration) updateData.estimated_duration = parseInt(requestData.estimated_duration);\nif (requestData.priority) updateData.priority = requestData.priority;\nif (requestData.automated !== undefined) updateData.automated = requestData.automated;\nif (requestData.status) updateData.status = requestData.status;\n\nreturn [{\n  json: updateData\n}];"
+      },
+      "id": "validate_update_routine",
+      "name": "Validate Update Routine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation_success_update",
+              "leftValue": "={{ $('Validate Update Routine').item.json.success }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_validation_update",
+      "name": "Check Validation Update",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.*, s.name as system_name, s.category as system_category FROM routines r JOIN systems s ON r.system_id = s.id WHERE r.id = $1",
+        "options": {}
+      },
+      "id": "fetch_routine_update",
+      "name": "Fetch Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "routine_exists_update",
+              "leftValue": "={{ $('Fetch Routine').item.json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_routine_exists_update",
+      "name": "Check Routine Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build dynamic update query\nconst updateData = $('Validate Update Routine').item.json;\nconst currentRoutine = $('Fetch Routine').item.json;\n\n// Build SET clause dynamically\nconst updateFields = [];\nconst params = [];\nlet paramIndex = 1;\n\nif (updateData.name) {\n  updateFields.push(`name = $${paramIndex}`);\n  params.push(updateData.name);\n  paramIndex++;\n}\n\nif (updateData.description !== undefined) {\n  updateFields.push(`description = $${paramIndex}`);\n  params.push(updateData.description);\n  paramIndex++;\n}\n\nif (updateData.day_of_week) {\n  updateFields.push(`day_of_week = $${paramIndex}`);\n  params.push(updateData.day_of_week);\n  paramIndex++;\n}\n\nif (updateData.time_of_day) {\n  updateFields.push(`time_of_day = $${paramIndex}`);\n  params.push(updateData.time_of_day);\n  paramIndex++;\n}\n\nif (updateData.estimated_duration) {\n  updateFields.push(`estimated_duration = $${paramIndex}`);\n  params.push(updateData.estimated_duration);\n  paramIndex++;\n}\n\nif (updateData.priority) {\n  updateFields.push(`priority = $${paramIndex}`);\n  params.push(updateData.priority);\n  paramIndex++;\n}\n\nif (updateData.automated !== undefined) {\n  updateFields.push(`automated = $${paramIndex}`);\n  params.push(updateData.automated);\n  paramIndex++;\n}\n\nif (updateData.status) {\n  updateFields.push(`status = $${paramIndex}`);\n  params.push(updateData.status);\n  paramIndex++;\n}\n\n// Always update modified timestamp\nupdateFields.push(`updated_at = NOW()`);\n\n// Add routine_id for WHERE clause\nparams.push(updateData.routine_id);\n\nconst query = `UPDATE routines SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`;\n\nreturn [{\n  json: {\n    query: query,\n    params: params,\n    routine_id: updateData.routine_id,\n    system_id: currentRoutine.system_id\n  }\n}];"
+      },
+      "id": "build_update_query",
+      "name": "Build Update Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Build Update Query').item.json.query }}",
+        "options": {
+          "queryParameters": {
+            "parameters": "={{ $('Build Update Query').item.json.params.map((param, index) => ({ parameter: param })) }}"
+          }
+        }
+      },
+      "id": "update_routine",
+      "name": "Update Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Update Routine').item.json.system_id }}"
+            },
+            {
+              "name": "event",
+              "value": "routine_updated"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  routine_id: $('Update Routine').item.json.id,\n  routine_name: $('Update Routine').item.json.name,\n  updated_by: 'api',\n  updated_at: new Date().toISOString()\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log_routine_updated",
+      "name": "Log Routine Updated (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"routine\": {\n    \"id\": $('Update Routine').item.json.id,\n    \"name\": $('Update Routine').item.json.name,\n    \"system_id\": $('Update Routine').item.json.system_id,\n    \"day_of_week\": $('Update Routine').item.json.day_of_week,\n    \"description\": $('Update Routine').item.json.description,\n    \"time_of_day\": $('Update Routine').item.json.time_of_day,\n    \"estimated_duration\": $('Update Routine').item.json.estimated_duration,\n    \"priority\": $('Update Routine').item.json.priority,\n    \"status\": $('Update Routine').item.json.status,\n    \"automated\": $('Update Routine').item.json.automated,\n    \"updated_at\": $('Update Routine').item.json.updated_at\n  },\n  \"message\": \"Routine updated successfully\"\n} }}",
+        "options": {}
+      },
+      "id": "respond_update_success",
+      "name": "Respond Update Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Routine not found\",\n  \"message\": \"The specified routine_id does not exist\"\n} }}",
+        "options": {
+          "responseCode": "404"
+        }
+      },
+      "id": "respond_routine_not_found_update",
+      "name": "Respond Routine Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": $('Validate Update Routine').item.json.error\n} }}",
+        "options": {
+          "responseCode": "={{ $('Validate Update Routine').item.json.statusCode || 400 }}"
+        }
+      },
+      "id": "respond_validation_error_update",
+      "name": "Respond Validation Error Update",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate routine completion data\nconst requestData = $json.body;\n\n// Required field validation\nif (!requestData.routine_id) {\n  return [{\n    json: {\n      success: false,\n      error: 'Missing required field: routine_id',\n      statusCode: 400\n    }\n  }];\n}\n\nconst completionData = {\n  routine_id: parseInt(requestData.routine_id),\n  completion_date: requestData.completion_date || new Date().toISOString().split('T')[0],\n  notes: requestData.notes || '',\n  quality_rating: requestData.quality_rating ? parseInt(requestData.quality_rating) : null,\n  completed_by: requestData.completed_by || 'user'\n};\n\n// Validate quality rating if provided\nif (completionData.quality_rating && (completionData.quality_rating < 1 || completionData.quality_rating > 5)) {\n  return [{\n    json: {\n      success: false,\n      error: 'Quality rating must be between 1 and 5',\n      statusCode: 400\n    }\n  }];\n}\n\nreturn [{\n  json: completionData\n}];"
+      },
+      "id": "validate_complete_routine",
+      "name": "Validate Complete Routine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation_success_complete",
+              "leftValue": "={{ $('Validate Complete Routine').item.json.success }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_validation_complete",
+      "name": "Check Validation Complete",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 700]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.*, s.name as system_name, s.category as system_category FROM routines r JOIN systems s ON r.system_id = s.id WHERE r.id = $1 AND r.status = 'active'",
+        "options": {}
+      },
+      "id": "fetch_routine_complete",
+      "name": "Fetch Routine Complete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "routine_exists_complete",
+              "leftValue": "={{ $('Fetch Routine Complete').item.json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_routine_exists_complete",
+      "name": "Check Routine Exists Complete",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate streak and update routine completion\nconst routine = $('Fetch Routine Complete').item.json;\nconst completionData = $('Validate Complete Routine').item.json;\nconst completionDate = new Date(completionData.completion_date);\nconst lastCompleted = routine.last_completed ? new Date(routine.last_completed) : null;\n\n// Calculate streak\nlet newStreak = routine.streak || 0;\nif (lastCompleted) {\n  const daysDiff = Math.floor((completionDate - lastCompleted) / (1000 * 60 * 60 * 24));\n  if (daysDiff === 1 || (routine.day_of_week === 'daily' && daysDiff === 1)) {\n    // Consecutive day - increment streak\n    newStreak++;\n  } else if (daysDiff === 0) {\n    // Same day - don't break streak but don't increment\n    newStreak = routine.streak;\n  } else {\n    // Gap in days - reset streak\n    newStreak = 1;\n  }\n} else {\n  // First completion\n  newStreak = 1;\n}\n\n// Calculate XP and coins based on routine properties\nconst baseXP = 15;\nconst baseCoinseek = 8;\nconst difficultyMultiplier = {\n  'easy': 1.0,\n  'medium': 1.5,\n  'hard': 2.0\n}[routine.priority] || 1.5;\n\nconst streakBonus = Math.min(newStreak * 0.1, 2.0); // Max 200% bonus at 20 streak\nconst qualityMultiplier = completionData.quality_rating ? (completionData.quality_rating / 5) : 1.0;\n\nconst finalXP = Math.floor(baseXP * difficultyMultiplier * (1 + streakBonus) * qualityMultiplier);\nconst finalCoins = Math.floor(baseCoins * difficultyMultiplier * (1 + streakBonus) * qualityMultiplier);\n\nreturn [{\n  json: {\n    routine_id: routine.id,\n    system_id: routine.system_id,\n    new_streak: newStreak,\n    old_streak: routine.streak,\n    completion_date: completionData.completion_date,\n    notes: completionData.notes,\n    quality_rating: completionData.quality_rating,\n    xp_earned: finalXP,\n    coins_earned: finalCoins,\n    streak_bonus: streakBonus,\n    routine_name: routine.name,\n    system_name: routine.system_name\n  }\n}];"
+      },
+      "id": "calculate_completion_rewards",
+      "name": "Calculate Completion Rewards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE routines SET streak = $1, last_completed = $2, completed_today = true WHERE id = $3 RETURNING *",
+        "options": {}
+      },
+      "id": "update_routine_completion",
+      "name": "Update Routine Completion",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1450, 500],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO routine_completions (routine_id, completion_date, notes, quality_rating, xp_earned, coins_earned, streak_at_completion, completed_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING *",
+        "options": {}
+      },
+      "id": "log_completion",
+      "name": "Log Completion",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1650, 500],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-trigger-skill-progression",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Calculate Completion Rewards').item.json.system_id }}"
+            },
+            {
+              "name": "progression_type",
+              "value": "routine_completion"
+            },
+            {
+              "name": "bonus_xp",
+              "value": "={{ $('Calculate Completion Rewards').item.json.xp_earned }}"
+            },
+            {
+              "name": "source",
+              "value": "routine_manager"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_skill_progression_complete",
+      "name": "Trigger Skill Progression Complete (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1850, 500],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"completion\": {\n    \"routine_id\": $('Calculate Completion Rewards').item.json.routine_id,\n    \"routine_name\": $('Calculate Completion Rewards').item.json.routine_name,\n    \"system_name\": $('Calculate Completion Rewards').item.json.system_name,\n    \"completion_date\": $('Calculate Completion Rewards').item.json.completion_date,\n    \"streak\": {\n      \"current\": $('Calculate Completion Rewards').item.json.new_streak,\n      \"previous\": $('Calculate Completion Rewards').item.json.old_streak,\n      \"bonus_multiplier\": $('Calculate Completion Rewards').item.json.streak_bonus\n    },\n    \"rewards\": {\n      \"xp_earned\": $('Calculate Completion Rewards').item.json.xp_earned,\n      \"coins_earned\": $('Calculate Completion Rewards').item.json.coins_earned\n    },\n    \"quality_rating\": $('Calculate Completion Rewards').item.json.quality_rating,\n    \"notes\": $('Calculate Completion Rewards').item.json.notes\n  },\n  \"message\": \"Routine completed successfully! \" + ($('Calculate Completion Rewards').item.json.new_streak > $('Calculate Completion Rewards').item.json.old_streak ? \"Streak increased to \" + $('Calculate Completion Rewards').item.json.new_streak + \"!\" : \"Keep up the great work!\")\n} }}",
+        "options": {}
+      },
+      "id": "respond_complete_success",
+      "name": "Respond Complete Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2050, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Routine not found or not active\",\n  \"message\": \"The specified routine_id does not exist or is not active\"\n} }}",
+        "options": {
+          "responseCode": "404"
+        }
+      },
+      "id": "respond_routine_not_found_complete",
+      "name": "Respond Routine Not Found Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": $('Validate Complete Routine').item.json.error\n} }}",
+        "options": {
+          "responseCode": "={{ $('Validate Complete Routine').item.json.statusCode || 400 }}"
+        }
+      },
+      "id": "respond_validation_error_complete",
+      "name": "Respond Validation Error Complete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 800]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate routine deletion data\nconst requestData = $json.body;\n\n// Required field validation\nif (!requestData.routine_id) {\n  return [{\n    json: {\n      success: false,\n      error: 'Missing required field: routine_id',\n      statusCode: 400\n    }\n  }];\n}\n\nconst deletionData = {\n  routine_id: parseInt(requestData.routine_id),\n  permanent: requestData.permanent || false, // If true, permanently delete; if false, just archive\n  reason: requestData.reason || 'User requested deletion'\n};\n\nreturn [{\n  json: deletionData\n}];"
+      },
+      "id": "validate_delete_routine",
+      "name": "Validate Delete Routine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 900]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation_success_delete",
+              "leftValue": "={{ $('Validate Delete Routine').item.json.success }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_validation_delete",
+      "name": "Check Validation Delete",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 900]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.*, s.name as system_name FROM routines r JOIN systems s ON r.system_id = s.id WHERE r.id = $1",
+        "options": {}
+      },
+      "id": "fetch_routine_delete",
+      "name": "Fetch Routine Delete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 800],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "routine_exists_delete",
+              "leftValue": "={{ $('Fetch Routine Delete').item.json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_routine_exists_delete",
+      "name": "Check Routine Exists Delete",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 800]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "permanent_delete",
+              "leftValue": "={{ $('Validate Delete Routine').item.json.permanent }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_permanent_delete",
+      "name": "Check Permanent Delete",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 700]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM routines WHERE id = $1 RETURNING *",
+        "options": {}
+      },
+      "id": "permanent_delete_routine",
+      "name": "Permanent Delete Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1450, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE routines SET status = 'archived', archived_at = NOW(), archived_reason = $1 WHERE id = $2 RETURNING *",
+        "options": {}
+      },
+      "id": "archive_routine",
+      "name": "Archive Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1450, 800],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Fetch Routine Delete').item.json.system_id }}"
+            },
+            {
+              "name": "event",
+              "value": "routine_deleted"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  routine_id: $('Fetch Routine Delete').item.json.id,\n  routine_name: $('Fetch Routine Delete').item.json.name,\n  deletion_type: $('Validate Delete Routine').item.json.permanent ? 'permanent' : 'archived',\n  reason: $('Validate Delete Routine').item.json.reason,\n  deleted_by: 'api',\n  deleted_at: new Date().toISOString()\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log_routine_deletion",
+      "name": "Log Routine Deletion (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 700],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"routine\": {\n    \"id\": $('Fetch Routine Delete').item.json.id,\n    \"name\": $('Fetch Routine Delete').item.json.name,\n    \"system_name\": $('Fetch Routine Delete').item.json.system_name,\n    \"deletion_type\": $('Validate Delete Routine').item.json.permanent ? 'permanent' : 'archived'\n  },\n  \"message\": $('Validate Delete Routine').item.json.permanent ? \"Routine permanently deleted\" : \"Routine archived successfully\"\n} }}",
+        "options": {}
+      },
+      "id": "respond_delete_success",
+      "name": "Respond Delete Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1850, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Routine not found\",\n  \"message\": \"The specified routine_id does not exist\"\n} }}",
+        "options": {
+          "responseCode": "404"
+        }
+      },
+      "id": "respond_routine_not_found_delete",
+      "name": "Respond Routine Not Found Delete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 900]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": $('Validate Delete Routine').item.json.error\n} }}",
+        "options": {
+          "responseCode": "={{ $('Validate Delete Routine').item.json.statusCode || 400 }}"
+        }
+      },
+      "id": "respond_validation_error_delete",
+      "name": "Respond Validation Error Delete",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 1000]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Create Routine": {
+      "main": [
+        [
+          {
+            "node": "Validate Create Routine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Update Routine": {
+      "main": [
+        [
+          {
+            "node": "Validate Update Routine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Complete Routine": {
+      "main": [
+        [
+          {
+            "node": "Validate Complete Routine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Delete Routine": {
+      "main": [
+        [
+          {
+            "node": "Validate Delete Routine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Create Routine": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Verify System Exists",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify System Exists": {
+      "main": [
+        [
+          {
+            "node": "Check System Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check System Exists": {
+      "main": [
+        [
+          {
+            "node": "Insert Routine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond System Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Routine": {
+      "main": [
+        [
+          {
+            "node": "Log Routine Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Routine Created": {
+      "main": [
+        [
+          {
+            "node": "Trigger Skill Progression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Skill Progression": {
+      "main": [
+        [
+          {
+            "node": "Respond Create Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Update Routine": {
+      "main": [
+        [
+          {
+            "node": "Check Validation Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation Update": {
+      "main": [
+        [
+          {
+            "node": "Fetch Routine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Validation Error Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Routine": {
+      "main": [
+        [
+          {
+            "node": "Check Routine Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Routine Exists": {
+      "main": [
+        [
+          {
+            "node": "Build Update Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Routine Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Update Query": {
+      "main": [
+        [
+          {
+            "node": "Update Routine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Routine": {
+      "main": [
+        [
+          {
+            "node": "Log Routine Updated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Routine Updated": {
+      "main": [
+        [
+          {
+            "node": "Respond Update Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Complete Routine": {
+      "main": [
+        [
+          {
+            "node": "Check Validation Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation Complete": {
+      "main": [
+        [
+          {
+            "node": "Fetch Routine Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Validation Error Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Routine Complete": {
+      "main": [
+        [
+          {
+            "node": "Check Routine Exists Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Routine Exists Complete": {
+      "main": [
+        [
+          {
+            "node": "Calculate Completion Rewards",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Routine Not Found Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Completion Rewards": {
+      "main": [
+        [
+          {
+            "node": "Update Routine Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Routine Completion": {
+      "main": [
+        [
+          {
+            "node": "Log Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Completion": {
+      "main": [
+        [
+          {
+            "node": "Trigger Skill Progression Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Skill Progression Complete": {
+      "main": [
+        [
+          {
+            "node": "Respond Complete Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Delete Routine": {
+      "main": [
+        [
+          {
+            "node": "Check Validation Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation Delete": {
+      "main": [
+        [
+          {
+            "node": "Fetch Routine Delete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Validation Error Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Routine Delete": {
+      "main": [
+        [
+          {
+            "node": "Check Routine Exists Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Routine Exists Delete": {
+      "main": [
+        [
+          {
+            "node": "Check Permanent Delete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Routine Not Found Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Permanent Delete": {
+      "main": [
+        [
+          {
+            "node": "Permanent Delete Routine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Archive Routine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Permanent Delete Routine": {
+      "main": [
+        [
+          {
+            "node": "Log Routine Deletion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Archive Routine": {
+      "main": [
+        [
+          {
+            "node": "Log Routine Deletion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Routine Deletion": {
+      "main": [
+        [
+          {
+            "node": "Respond Delete Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "routine-manager-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "routine-manager",
+  "tags": []
+}

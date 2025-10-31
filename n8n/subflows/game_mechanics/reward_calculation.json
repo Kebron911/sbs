@@ -1,0 +1,96 @@
+{
+  "name": "REWARD_CALCULATION",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-reward-calculation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook - Reward Calculation",
+      "name": "Webhook - Reward Calculation",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        200
+      ],
+      "webhookId": "subflow-reward-calculation"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Reward Calculation Engine\nconst data = $json;\nconst calculationType = data.calculation_type || 'standard';\nconst baseXP = data.base_xp || 20;\nconst baseCoins = data.base_coins || Math.floor(baseXP * 0.5);\nconst difficulty = data.difficulty || 'medium';\nconst streakBonus = data.streak_bonus || 0;\nconst qualityMultiplier = data.quality_multiplier || 1.0;\nconst timeBonus = data.time_bonus || 0;\nconst specialMultipliers = data.special_multipliers || {};\n\n// Comprehensive difficulty multipliers\nconst difficultyMultipliers = {\n  'tutorial': 0.5,\n  'easy': 1.0,\n  'medium': 1.5,\n  'hard': 2.0,\n  'very_hard': 2.5,\n  'epic': 3.0,\n  'legendary': 5.0,\n  'mythic': 10.0\n};\n\n// Calculation type specific logic\nlet finalMultiplier = difficultyMultipliers[difficulty] || 1.5;\n\nif (calculationType === 'quest') {\n  // Quest-specific bonuses\n  if (data.deadline_met) {\n    finalMultiplier *= 1.2; // 20% bonus for meeting deadline\n  }\n  if (data.perfect_completion) {\n    finalMultiplier *= 1.3; // 30% bonus for perfect completion\n  }\n} else if (calculationType === 'routine') {\n  // Routine-specific bonuses\n  const streakMultiplier = Math.min(streakBonus * 0.1, 2.0); // Max 200% bonus\n  finalMultiplier *= (1 + streakMultiplier);\n  finalMultiplier *= qualityMultiplier;\n} else if (calculationType === 'habit') {\n  // Habit-specific streak bonuses\n  if (streakBonus >= 90) finalMultiplier *= 3.0;\n  else if (streakBonus >= 30) finalMultiplier *= 2.0;\n  else if (streakBonus >= 7) finalMultiplier *= 1.5;\n} else if (calculationType === 'sbs_item') {\n  // SBS item specific bonuses\n  const sbsItemBonuses = {\n    'system_blueprint': { xp_bonus: 100, coin_bonus: 50 },\n    'automation_tool': { xp_bonus: 75, coin_bonus: 25 },\n    'habit_tracker': { xp_bonus: 50, coin_bonus: 30 },\n    'skill_book': { xp_bonus: 60, coin_bonus: 20 }\n  };\n  \n  const itemType = data.item_type;\n  if (sbsItemBonuses[itemType]) {\n    finalMultiplier += sbsItemBonuses[itemType].xp_bonus / baseXP;\n  }\n}\n\n// Apply special multipliers\nObject.values(specialMultipliers).forEach(multiplier => {\n  finalMultiplier *= multiplier;\n});\n\n// Calculate final rewards\nconst finalXP = Math.floor((baseXP * finalMultiplier) + timeBonus);\nconst finalCoins = Math.floor(baseCoins * finalMultiplier);\n\n// Generate reward breakdown\nconst breakdown = {\n  base_xp: baseXP,\n  base_coins: baseCoins,\n  difficulty_multiplier: difficultyMultipliers[difficulty] || 1.5,\n  final_multiplier: finalMultiplier,\n  time_bonus: timeBonus,\n  streak_bonus: streakBonus,\n  quality_multiplier: qualityMultiplier,\n  calculation_type: calculationType,\n  special_bonuses: specialMultipliers\n};\n\nreturn {\n  json: {\n    success: true,\n    rewards: {\n      xp: finalXP,\n      coins: finalCoins,\n      base_xp: baseXP,\n      base_coins: baseCoins\n    },\n    multipliers: {\n      difficulty: difficultyMultipliers[difficulty] || 1.5,\n      final: finalMultiplier,\n      streak: streakBonus,\n      quality: qualityMultiplier\n    },\n    breakdown: breakdown,\n    calculation_summary: `${baseXP} base XP × ${finalMultiplier.toFixed(2)} = ${finalXP} XP, ${baseCoins} base coins × ${finalMultiplier.toFixed(2)} = ${finalCoins} coins`\n  }\n};"
+      },
+      "id": "Calculate Rewards",
+      "name": "Calculate Rewards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "Respond with Results",
+      "name": "Respond with Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        200
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Reward Calculation": {
+      "main": [
+        [
+          {
+            "node": "Calculate Rewards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Rewards": {
+      "main": [
+        [
+          {
+            "node": "Respond with Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "reward-calculation",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

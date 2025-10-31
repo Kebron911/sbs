@@ -1,0 +1,440 @@
+{
+  "name": "Routine Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule - Daily 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  r.id as routine_id,\n  r.name as routine_name,\n  r.description,\n  r.day_of_week,\n  s.id as system_id,\n  s.name as system_name,\n  s.category,\n  s.current_stage\nFROM routines r\nJOIN systems s ON r.system_id = s.id\nWHERE r.status = 'active'\nAND r.day_of_week = TO_CHAR(CURRENT_DATE, 'Day')\nAND s.current_stage != 'complete';",
+        "additionalFields": {}
+      },
+      "id": "get-todays-routines",
+      "name": "Get Today's Active Routines",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        450,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-routines-exist",
+      "name": "Check If Routines Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-routines",
+      "name": "Split Into Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "message",
+              "value": "=📅 *Daily Routine Reminder*\\n\\n*System:* {{ $json.system_name }}\\n*Category:* {{ $json.category }}\\n*Routine:* {{ $json.routine_name }}\\n\\n📝 {{ $json.description }}\\n\\n*Current Stage:* {{ $json.current_stage }}\\n\\n✅ Reply with `/complete {{ $json.routine_id }}` when done\\n⏭️ Reply with `/skip {{ $json.routine_id }}` to skip today"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-routine-reminder",
+      "name": "Send Routine Reminder (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1050,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.system_id }}"
+            },
+            {
+              "name": "event",
+              "value": "routine_reminder_sent"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  routine_id: $json.routine_id,\n  routine_name: $json.routine_name,\n  day_of_week: $json.day_of_week,\n  timestamp: new Date().toISOString()\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-reminder-sent",
+      "name": "Log Reminder Sent (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "message",
+              "value": "=✨ *Daily Routine Check Complete*\\n\\n{{ $json.length }} reminder(s) sent today.\\n\\nHave a productive day! 🚀"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-summary",
+      "name": "Send Summary Message (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1650,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "message",
+              "value": "=📭 *No Active Routines Today*\\n\\nNo routines scheduled for {{ TO_CHAR(CURRENT_DATE, 'Day, Month DD, YYYY') }}.\\n\\nEnjoy your free day! ✨"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "no-routines-message",
+      "name": "No Routines Message (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        500
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  COUNT(*) FILTER (WHERE current_stage != 'complete') as active_systems,\n  COUNT(DISTINCT category) as categories,\n  array_agg(DISTINCT current_stage) as stages_in_progress\nFROM systems;",
+        "additionalFields": {}
+      },
+      "id": "get-system-stats",
+      "name": "Get System Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        250,
+        600
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "message",
+              "value": "=📊 *SBS System Summary*\\n\\n🔧 Active Systems: {{ $json.active_systems }}\\n🗂️ Categories: {{ $json.categories }}\\n⚙️ Stages in Progress: {{ $json.stages_in_progress.join(', ') }}\\n\\n_Daily routine check initiated..._"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-daily-summary",
+      "name": "Send Daily Summary (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        450,
+        600
+      ],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Schedule - Daily 9am": {
+      "main": [
+        [
+          {
+            "node": "Get System Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Today's Active Routines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get System Stats": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Summary (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Today's Active Routines": {
+      "main": [
+        [
+          {
+            "node": "Check If Routines Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Routines Exist": {
+      "main": [
+        [
+          {
+            "node": "Split Into Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Routines Message (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Items": {
+      "main": [
+        [
+          {
+            "node": "Send Routine Reminder (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Routine Reminder (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Log Reminder Sent (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Reminder Sent (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Send Summary Message (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver",
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

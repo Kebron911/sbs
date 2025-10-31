@@ -1,0 +1,297 @@
+{
+  "name": "🔍 Database Health Analyzer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "db-health-analyzer",
+        "options": {}
+      },
+      "id": "cb1055ac-465e-4b7a-ace4-d5a0754191a9",
+      "name": "Webhook - DB Health Check",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        144
+      ],
+      "webhookId": "db-health-analyzer"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "condition_1",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "table_analysis",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "85280fc9-d5c6-49a6-8625-1d0c0bf97089",
+      "name": "Route Analysis Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Comprehensive Table Analysis\nSELECT \n    schemaname,\n    tablename,\n    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as table_size,\n    pg_stat_get_tuples_returned(c.oid) as tuples_read,\n    pg_stat_get_tuples_fetched(c.oid) as tuples_fetched,\n    pg_stat_get_tuples_inserted(c.oid) as tuples_inserted,\n    pg_stat_get_tuples_updated(c.oid) as tuples_updated,\n    pg_stat_get_tuples_deleted(c.oid) as tuples_deleted,\n    pg_stat_get_live_tuples(c.oid) as live_tuples,\n    pg_stat_get_dead_tuples(c.oid) as dead_tuples,\n    CASE \n        WHEN pg_stat_get_live_tuples(c.oid) > 0 \n        THEN round((pg_stat_get_dead_tuples(c.oid)::float / pg_stat_get_live_tuples(c.oid)::float) * 100, 2)\n        ELSE 0\n    END as dead_tuple_percentage,\n    last_vacuum,\n    last_autovacuum,\n    last_analyze,\n    last_autoanalyze\nFROM pg_tables pt\nJOIN pg_class c ON c.relname = pt.tablename\nJOIN pg_stat_user_tables sut ON sut.relname = pt.tablename\nWHERE schemaname = 'public'\nORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;",
+        "options": {}
+      },
+      "id": "4aace4d4-9f81-4d11-9998-4695a16d2862",
+      "name": "Analyze Table Statistics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        0,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Index Usage Analysis\nSELECT \n    schemaname,\n    tablename,\n    indexname,\n    idx_tup_read,\n    idx_tup_fetch,\n    idx_scan,\n    CASE \n        WHEN idx_scan = 0 THEN 'UNUSED'\n        WHEN idx_scan < 10 THEN 'LOW USAGE'\n        WHEN idx_scan < 100 THEN 'MODERATE USAGE'\n        ELSE 'HIGH USAGE'\n    END as usage_category,\n    pg_size_pretty(pg_relation_size(indexrelname::regclass)) as index_size\nFROM pg_stat_user_indexes\nWHERE schemaname = 'public'\nORDER BY idx_scan ASC, pg_relation_size(indexrelname::regclass) DESC;",
+        "options": {}
+      },
+      "id": "ee88a494-54f9-42c2-b90e-03da4771b0d7",
+      "name": "Analyze Index Usage",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        0,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Database Overview and Health Metrics\nSELECT \n    'Database Size' as metric,\n    pg_size_pretty(pg_database_size(current_database())) as value,\n    'Total database size on disk' as description\nUNION ALL\nSELECT \n    'Active Connections' as metric,\n    count(*)::text as value,\n    'Current active database connections' as description\nFROM pg_stat_activity \nWHERE datname = current_database()\nUNION ALL\nSELECT \n    'Total Tables' as metric,\n    count(*)::text as value,\n    'Number of user tables in public schema' as description\nFROM pg_tables \nWHERE schemaname = 'public'\nUNION ALL\nSELECT \n    'Total Indexes' as metric,\n    count(*)::text as value,\n    'Number of indexes in public schema' as description\nFROM pg_indexes \nWHERE schemaname = 'public'\nUNION ALL\nSELECT \n    'PostgreSQL Version' as metric,\n    version() as value,\n    'Database server version information' as description\nUNION ALL\nSELECT \n    'Database Uptime' as metric,\n    (now() - pg_postmaster_start_time())::text as value,\n    'Time since database server started' as description;",
+        "options": {}
+      },
+      "id": "d257c8d0-4756-4bd2-99ef-59449bcbc26e",
+      "name": "Get Database Overview",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and format database health analysis results\nconst tableStats = $input.first().json;\nconst indexStats = $input.all()[1].json;\nconst dbOverview = $input.all()[2].json;\n\n// Create comprehensive health report\nconst healthReport = {\n  timestamp: new Date().toISOString(),\n  analysis_type: 'comprehensive_health_check',\n  database_overview: {},\n  table_analysis: {\n    total_tables: tableStats.length,\n    tables: tableStats,\n    health_alerts: []\n  },\n  index_analysis: {\n    total_indexes: indexStats.length,\n    indexes: indexStats,\n    unused_indexes: indexStats.filter(idx => idx.usage_category === 'UNUSED'),\n    low_usage_indexes: indexStats.filter(idx => idx.usage_category === 'LOW USAGE')\n  },\n  recommendations: []\n};\n\n// Process database overview\ndbOverview.forEach(metric => {\n  healthReport.database_overview[metric.metric.toLowerCase().replace(/\\s+/g, '_')] = {\n    value: metric.value,\n    description: metric.description\n  };\n});\n\n// Analyze table health and generate alerts\ntableStats.forEach(table => {\n  // Check for high dead tuple percentage\n  if (table.dead_tuple_percentage > 20) {\n    healthReport.table_analysis.health_alerts.push({\n      severity: 'warning',\n      table: table.tablename,\n      issue: 'High dead tuple percentage',\n      value: `${table.dead_tuple_percentage}%`,\n      recommendation: 'Consider running VACUUM on this table'\n    });\n  }\n  \n  // Check for tables that haven't been analyzed recently\n  if (!table.last_analyze && !table.last_autoanalyze) {\n    healthReport.table_analysis.health_alerts.push({\n      severity: 'info',\n      table: table.tablename,\n      issue: 'Never analyzed',\n      recommendation: 'Run ANALYZE to update table statistics'\n    });\n  }\n});\n\n// Generate general recommendations\nif (healthReport.index_analysis.unused_indexes.length > 0) {\n  healthReport.recommendations.push({\n    type: 'performance',\n    priority: 'medium',\n    description: `Found ${healthReport.index_analysis.unused_indexes.length} unused indexes`,\n    action: 'Consider dropping unused indexes to save storage space'\n  });\n}\n\nif (healthReport.table_analysis.health_alerts.filter(alert => alert.severity === 'warning').length > 0) {\n  healthReport.recommendations.push({\n    type: 'maintenance',\n    priority: 'high',\n    description: 'Tables with high dead tuple percentage detected',\n    action: 'Schedule VACUUM operations for affected tables'\n  });\n}\n\nreturn { json: healthReport };"
+      },
+      "id": "ea4a4d2f-946a-4d23-8407-31ad37f63338",
+      "name": "Format Health Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "condition_1",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "bloat_analysis",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "98eef4a9-16e2-4ef5-aab7-4aabe0e310fc",
+      "name": "Check for Bloat Analysis",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Table and Index Bloat Analysis\nWITH table_bloat AS (\n  SELECT\n    schemaname,\n    tablename,\n    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as total_size,\n    pg_stat_get_live_tuples(c.oid) as live_tuples,\n    pg_stat_get_dead_tuples(c.oid) as dead_tuples,\n    CASE \n      WHEN pg_stat_get_live_tuples(c.oid) > 0 \n      THEN round((pg_stat_get_dead_tuples(c.oid)::float / (pg_stat_get_live_tuples(c.oid) + pg_stat_get_dead_tuples(c.oid))::float) * 100, 2)\n      ELSE 0\n    END as bloat_percentage,\n    last_vacuum,\n    last_autovacuum\n  FROM pg_tables pt\n  JOIN pg_class c ON c.relname = pt.tablename\n  JOIN pg_stat_user_tables sut ON sut.relname = pt.tablename\n  WHERE schemaname = 'public'\n)\nSELECT \n  *,\n  CASE \n    WHEN bloat_percentage > 30 THEN 'CRITICAL'\n    WHEN bloat_percentage > 20 THEN 'HIGH'\n    WHEN bloat_percentage > 10 THEN 'MODERATE'\n    ELSE 'LOW'\n  END as bloat_level,\n  CASE \n    WHEN bloat_percentage > 30 THEN 'Immediate VACUUM FULL required'\n    WHEN bloat_percentage > 20 THEN 'VACUUM recommended'\n    WHEN bloat_percentage > 10 THEN 'Monitor and consider VACUUM'\n    ELSE 'No action needed'\n  END as recommended_action\nFROM table_bloat\nORDER BY bloat_percentage DESC, pg_total_relation_size(schemaname||'.'||tablename) DESC;",
+        "options": {}
+      },
+      "id": "9674027c-8562-4df0-8b09-0b5199f011b5",
+      "name": "Analyze Bloat",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        224,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "33649ccd-c08e-496a-8526-6a711036960e",
+      "name": "Return Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        448,
+        240
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - DB Health Check": {
+      "main": [
+        [
+          {
+            "node": "Route Analysis Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Analysis Type": {
+      "main": [
+        [
+          {
+            "node": "Analyze Table Statistics",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Analyze Index Usage",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Database Overview",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check for Bloat Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Table Statistics": {
+      "main": [
+        [
+          {
+            "node": "Format Health Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Index Usage": {
+      "main": [
+        [
+          {
+            "node": "Format Health Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Database Overview": {
+      "main": [
+        [
+          {
+            "node": "Format Health Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Health Report": {
+      "main": [
+        [
+          {
+            "node": "Return Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Bloat Analysis": {
+      "main": [
+        [
+          {
+            "node": "Analyze Bloat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Bloat": {
+      "main": [
+        [
+          {
+            "node": "Return Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "BsuzJiRFU41tKVLC",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

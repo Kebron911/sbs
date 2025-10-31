@@ -1,0 +1,660 @@
+{
+  "name": "PRESTIGE_CALC",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prestige-eligibility",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "trigger_level_max",
+      "name": "Webhook: Prestige Eligibility Check",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "prestige-eligibility-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-validate-input",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "validation_type",
+              "value": "character_data"
+            },
+            {
+              "name": "data",
+              "value": "={{ $json.body }}"
+            },
+            {
+              "name": "required_fields",
+              "value": "=[\"character_id\"]"
+            },
+            {
+              "name": "source",
+              "value": "prestige_calc"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "validate_input",
+      "name": "Validate Character ID (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        350,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-character-data",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $json.body.character_id }}"
+            },
+            {
+              "name": "include_skills",
+              "value": true
+            },
+            {
+              "name": "include_habits",
+              "value": true
+            },
+            {
+              "name": "include_systems",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch_character_data",
+      "name": "Fetch Character & User Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        550,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "level_check",
+              "leftValue": "={{ $json.character.level }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_prestige_eligibility",
+      "name": "Check Prestige Eligibility",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// SBS-Enhanced Prestige Calculation\nconst characterData = $input.first().json;\nconst character = characterData.character;\nconst skills = characterData.skills || [];\n\n// Calculate SBS-focused prestige bonus\nconst currentPrestigeCount = character.total_prestiges || 0;\nconst prestigeLevel = currentPrestigeCount + 1;\nconst sbsSystemsCompleted = characterData.sbs_stats.completed_systems || 0;\nconst sbsGeneratedSkills = characterData.sbs_stats.sbs_generated_skills || 0;\nconst sbsGeneratedHabits = characterData.sbs_stats.sbs_generated_habits || 0;\n\n// SBS-Enhanced Prestige Bonus Formula\nconst baseHPBonus = 15 + (sbsSystemsCompleted * 5); // Extra HP for completed systems\nconst sbsXPMultiplier = 0.1 + (sbsSystemsCompleted * 0.02); // Enhanced SBS XP progression\nconst routineEfficiencyBonus = 0.05 + (sbsSystemsCompleted * 0.01); // Faster routine completion\nconst baseCoinBonus = 150 + (sbsSystemsCompleted * 25); // Bonus coins for SBS mastery\n\n// Calculate SBS-focused bonuses\nconst sbsPrestigeBonus = {\n  hp_bonus: baseHPBonus * prestigeLevel,\n  sbs_xp_multiplier: 1 + (sbsXPMultiplier * prestigeLevel),\n  routine_efficiency: 1 + (routineEfficiencyBonus * prestigeLevel),\n  coin_bonus: baseCoinBonus * prestigeLevel,\n  prestige_level: prestigeLevel,\n  \n  // SBS Preservation Rules\n  preserve_completed_systems: true,\n  preserve_sbs_skills: true,\n  preserve_sbs_habits: true,\n  \n  // SBS Prestige Perks\n  sbs_prestige_perks: [\n    prestigeLevel >= 1 ? 'sbs_efficiency_master' : null,\n    prestigeLevel >= 2 ? 'sbs_multi_builder' : null,\n    prestigeLevel >= 3 ? 'sbs_automation_expert' : null,\n    prestigeLevel >= 5 ? 'sbs_life_architect' : null\n  ].filter(perk => perk !== null)\n};\n\n// Calculate SBS skill retention (keep ALL SBS-generated skills, 15% of others)\nconst skillRetention = skills.map(skill => {\n  const isSBSGenerated = skill.source === 'sbs_system';\n  return {\n    skill_name: skill.skill_name,\n    skill_id: skill.id,\n    is_sbs_generated: isSBSGenerated,\n    retained_xp: isSBSGenerated ? skill.xp : Math.floor(skill.xp * 0.15),\n    original_xp: skill.xp,\n    retention_reason: isSBSGenerated ? 'SBS System Preservation' : 'Standard Retention'\n  };\n});\n\n// Store pre-prestige stats for comprehensive tracking\nconst prePrestigeStats = {\n  level: character.level,\n  total_xp: character.total_xp,\n  hp: character.hp,\n  coins: character.coins,\n  skills: skills.length,\n  sbs_systems_completed: sbsSystemsCompleted,\n  sbs_generated_skills: sbsGeneratedSkills,\n  sbs_generated_habits: sbsGeneratedHabits\n};\n\nreturn {\n  json: {\n    user_id: character.user_id,\n    character_id: character.id,\n    username: character.username,\n    prestige_bonus: sbsPrestigeBonus,\n    skill_retention: skillRetention,\n    pre_prestige_stats: prePrestigeStats,\n    sbs_preservation: {\n      systems_preserved: sbsSystemsCompleted,\n      skills_preserved: sbsGeneratedSkills,\n      habits_preserved: sbsGeneratedHabits\n    },\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "calculate_prestige_bonus",
+      "name": "Calculate Prestige Bonus",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-ai-content",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content_type",
+              "value": "prestige_celebration"
+            },
+            {
+              "name": "ai_provider",
+              "value": "openai"
+            },
+            {
+              "name": "model",
+              "value": "gpt-4"
+            },
+            {
+              "name": "context_data",
+              "value": "={{ {\n  username: $json.username,\n  prestige_level: $json.prestige_bonus.prestige_level,\n  systems_preserved: $json.sbs_preservation.systems_preserved,\n  skills_preserved: $json.sbs_preservation.skills_preserved,\n  habits_preserved: $json.sbs_preservation.habits_preserved,\n  pre_prestige_level: $json.pre_prestige_stats.level,\n  pre_prestige_xp: $json.pre_prestige_stats.total_xp\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ai_generate_prestige_message",
+      "name": "AI: Generate Prestige Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process AI content response from subflow\nconst aiSubflowResponse = $input.first().json;\nconst prestigeData = $('Calculate Prestige Bonus').first().json;\n\n// Extract AI content from subflow response\nconst aiContent = aiSubflowResponse.content || {\n  title: `Prestige Master ${prestigeData.prestige_bonus.prestige_level}`,\n  message: `Congratulations on reaching Prestige Level ${prestigeData.prestige_bonus.prestige_level}! Your journey begins anew, stronger than before.`,\n  quote: \"Every end is a new beginning.\"\n};\n\nreturn {\n  json: {\n    ...prestigeData,\n    ai_content: aiContent\n  }\n};"
+      },
+      "id": "parse_ai_response",
+      "name": "Process AI Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE Characters SET level = 1, xp = 0, total_xp = total_xp, hp = 100 + {{$json.prestige_bonus.hp_bonus}}, max_hp = 100 + {{$json.prestige_bonus.hp_bonus}}, prestige_level = {{$json.prestige_bonus.prestige_level}}, xp_multiplier = {{$json.prestige_bonus.xp_multiplier}}, updated_at = NOW() WHERE id = {{$json.character_id}} RETURNING *"
+      },
+      "id": "reset_character_stats",
+      "name": "Reset Character Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE Users SET total_prestiges = total_prestiges + 1, coins = coins + {{$json.prestige_bonus.coin_bonus}}, updated_at = NOW() WHERE id = {{$json.user_id}} RETURNING *"
+      },
+      "id": "update_user_prestige",
+      "name": "Update User Prestige Count",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE Skills SET xp = {{$json.skill_retention[0].retained_xp}}, level = 1 WHERE user_id = {{$json.user_id}} AND skill_name = '{{$json.skill_retention[0].skill_name}}'"
+      },
+      "id": "reset_skills_with_retention",
+      "name": "Reset Skills (with Retention)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        400
+      ],
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "Achievements",
+        "columns": "user_id, achievement_type, achievement_name, achievement_description, badge_icon, unlocked_at",
+        "values": "={{$json.user_id}}, 'prestige', '{{$json.ai_content.title}}', '{{$json.ai_content.message}}', 'prestige_{{$json.prestige_bonus.prestige_level}}.png', NOW()"
+      },
+      "id": "grant_prestige_achievement",
+      "name": "Grant Prestige Achievement",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "Inventory",
+        "columns": "user_id, item_name, item_type, item_description, quantity, acquired_at",
+        "values": "={{$json.user_id}}, 'Prestige Token {{$json.prestige_bonus.prestige_level}}', 'token', 'Permanent +{{$json.prestige_bonus.hp_bonus}} Max HP, {{Math.round(($json.prestige_bonus.xp_multiplier - 1) * 100)}}% XP Bonus', 1, NOW()"
+      },
+      "id": "add_prestige_token",
+      "name": "Add Prestige Token to Inventory",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "Events",
+        "columns": "user_id, event_type, event_category, event_data, created_at",
+        "values": "={{$json.user_id}}, 'prestige_unlock', 'progression', '{\"prestige_level\": {{$json.prestige_bonus.prestige_level}}, \"hp_bonus\": {{$json.prestige_bonus.hp_bonus}}, \"xp_multiplier\": {{$json.prestige_bonus.xp_multiplier}}, \"coin_bonus\": {{$json.prestige_bonus.coin_bonus}}, \"title\": \"{{$json.ai_content.title}}\", \"message\": \"{{$json.ai_content.message}}\", \"quote\": \"{{$json.ai_content.quote}}\"}', NOW()"
+      },
+      "id": "log_prestige_event",
+      "name": "Log Prestige Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "method": "POST",
+        "url": "={{$json.notification_webhook_url || 'https://your-app.com/api/notifications'}}",
+        "options": {},
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "user_id",
+              "value": "={{$json.user_id}}"
+            },
+            {
+              "name": "type",
+              "value": "prestige_celebration"
+            },
+            {
+              "name": "title",
+              "value": "={{$json.ai_content.title}}"
+            },
+            {
+              "name": "message",
+              "value": "={{$json.ai_content.message}}"
+            },
+            {
+              "name": "quote",
+              "value": "={{$json.ai_content.quote}}"
+            },
+            {
+              "name": "prestige_level",
+              "value": "={{$json.prestige_bonus.prestige_level}}"
+            },
+            {
+              "name": "bonuses",
+              "value": "={{$json.prestige_bonus}}"
+            }
+          ]
+        }
+      },
+      "id": "notify_user_frontend",
+      "name": "Notify User (Frontend)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-achievement-check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $json.character_id }}"
+            },
+            {
+              "name": "trigger_source",
+              "value": "prestige_completion"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_sbs_achievements",
+      "name": "Trigger SBS Achievement Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Final SBS Prestige summary output\nreturn {\n  json: {\n    success: true,\n    user_id: $json.user_id,\n    prestige_level: $json.prestige_bonus.prestige_level,\n    title_earned: $json.ai_content.title,\n    sbs_bonuses_applied: {\n      hp_bonus: $json.prestige_bonus.hp_bonus,\n      sbs_xp_multiplier: $json.prestige_bonus.sbs_xp_multiplier,\n      routine_efficiency: $json.prestige_bonus.routine_efficiency,\n      coin_bonus: $json.prestige_bonus.coin_bonus,\n      sbs_prestige_perks: $json.prestige_bonus.sbs_prestige_perks\n    },\n    sbs_preservation: {\n      systems_preserved: $json.sbs_preservation.systems_preserved,\n      skills_preserved: $json.sbs_preservation.skills_preserved,\n      habits_preserved: $json.sbs_preservation.habits_preserved\n    },\n    message: $json.ai_content.message,\n    quote: $json.ai_content.quote,\n    prestige_type: 'sbs_master_prestige',\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "output_summary",
+      "name": "Output Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"message\": \"Prestige calculation completed successfully\",\n  \"data\": $json\n} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond_success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": !$node[\"Validate Character ID (Subflow)\"].json.validation.is_valid ? $node[\"Validate Character ID (Subflow)\"].json.validation.message : ($node[\"Check Prestige Eligibility\"].json ? \"Character not eligible for prestige (level must be 50+)\" : \"Character not found or already processed\")\n} }}",
+        "options": {
+          "responseCode": "={{ !$node[\"Validate Character ID (Subflow)\"].json.validation.is_valid ? 400 : 422 }}"
+        }
+      },
+      "id": "respond_error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2250,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook: Prestige Eligibility Check": {
+      "main": [
+        [
+          {
+            "node": "Validate Character ID (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Character ID (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Character & User Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Character & User Data": {
+      "main": [
+        [
+          {
+            "node": "Check Prestige Eligibility",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Prestige Eligibility": {
+      "main": [
+        [
+          {
+            "node": "Calculate Prestige Bonus",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Prestige Bonus": {
+      "main": [
+        [
+          {
+            "node": "AI: Generate Prestige Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Generate Prestige Message": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Reset Character Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update User Prestige Count",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reset Skills (with Retention)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Character Stats": {
+      "main": [
+        [
+          {
+            "node": "Grant Prestige Achievement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User Prestige Count": {
+      "main": [
+        [
+          {
+            "node": "Add Prestige Token to Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Skills (with Retention)": {
+      "main": [
+        [
+          {
+            "node": "Log Prestige Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Grant Prestige Achievement": {
+      "main": [
+        [
+          {
+            "node": "Notify User (Frontend)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Prestige Token to Inventory": {
+      "main": [
+        [
+          {
+            "node": "Notify User (Frontend)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Prestige Event": {
+      "main": [
+        [
+          {
+            "node": "Notify User (Frontend)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify User (Frontend)": {
+      "main": [
+        [
+          {
+            "node": "Trigger SBS Achievement Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger SBS Achievement Check": {
+      "main": [
+        [
+          {
+            "node": "Output Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Summary": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-10-30T16:26:07.000Z",
+  "versionId": "1",
+  "active": true,
+  "meta": {},
+  "pinData": {},
+  "createdAt": "2025-10-30T16:26:07.000Z"
+}

@@ -1,0 +1,481 @@
+{
+  "name": "EVENT_SEEDER",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule_monthly",
+      "name": "Schedule - Monthly (1st)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as total_events, COUNT(CASE WHEN available = true THEN 1 END) as available_events FROM rng_events",
+        "options": {}
+      },
+      "id": "check_event_pool",
+      "name": "Check Event Pool",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        450,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "promptType": "define",
+        "text": "=You are a creative game designer for a life-gamification app. Generate 20 diverse random events for players.\n\nEvent Pool Status:\n- Total events in database: {{ $('Check Event Pool').item.json.total_events }}\n- Currently available: {{ $('Check Event Pool').item.json.available_events }}\n\nCreate events that are:\n1. Diverse in nature (positive, negative, neutral, mysterious)\n2. Varied in rarity (common, uncommon, rare, legendary)\n3. Thematically appropriate for personal growth and productivity\n4. Fun, engaging, and sometimes humorous\n5. Include specific mechanical effects (HP, XP, coins, or special bonuses)\n\nEvent Categories to include:\n- Fortune events (lucky finds, bonus rewards)\n- Misfortune events (setbacks, small penalties)\n- Mystery events (random outcomes)\n- Wisdom events (reflective, philosophical)\n- Social events (community interactions)\n- Seasonal events (tied to time of year)\n\nRespond ONLY with a JSON array in this exact format:\n[\n  {\n    \"description\": \"You found a lucky coin while cleaning your workspace!\",\n    \"effect\": \"+15 coins\",\n    \"rarity\": \"common\"\n  },\n  {\n    \"description\": \"A mysterious mentor appears and shares ancient wisdom\",\n    \"effect\": \"+50 XP to highest skill\",\n    \"rarity\": \"rare\"\n  },\n  {\n    \"description\": \"You overslept and missed your morning routine\",\n    \"effect\": \"-10 HP\",\n    \"rarity\": \"uncommon\"\n  }\n]\n\nGenerate 20 unique, creative events now.",
+        "options": {
+          "temperature": 0.9,
+          "maxTokens": 2000
+        }
+      },
+      "id": "generate_events_ai",
+      "name": "Generate Events (AI)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.3,
+      "position": [
+        650,
+        400
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "2",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI response and validate events\nconst response = $input.item.json.output || $input.item.json.response || $input.item.json.text;\nlet events = [];\n\ntry {\n  const parsed = JSON.parse(response);\n  events = Array.isArray(parsed) ? parsed : [parsed];\n} catch (e) {\n  const jsonMatch = response.match(/```json\\s*([\\s\\S]*?)```/);\n  if (jsonMatch) {\n    events = JSON.parse(jsonMatch[1]);\n  } else {\n    const arrayMatch = response.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);\n    if (arrayMatch) {\n      events = JSON.parse(arrayMatch[0]);\n    }\n  }\n}\n\nfunction detectCategory(description, effect) {\n  const desc = description.toLowerCase();\n  const eff = effect.toLowerCase();\n  \n  if (desc.includes('found') || desc.includes('lucky') || eff.includes('+')) {\n    return 'fortune';\n  } else if (desc.includes('missed') || desc.includes('lost') || eff.includes('-')) {\n    return 'misfortune';\n  } else if (desc.includes('mystery') || desc.includes('unknown')) {\n    return 'mystery';\n  } else if (desc.includes('wisdom') || desc.includes('reflect') || desc.includes('learn')) {\n    return 'wisdom';\n  } else if (desc.includes('friend') || desc.includes('guild') || desc.includes('community')) {\n    return 'social';\n  } else {\n    return 'general';\n  }\n}\n\nconst validatedEvents = events.map((event, index) => {\n  let rarity = (event.rarity || 'common').toLowerCase();\n  if (!['common', 'uncommon', 'rare', 'legendary'].includes(rarity)) {\n    rarity = 'common';\n  }\n  \n  return {\n    description: event.description || `Random event ${index + 1}`,\n    effect: event.effect || 'No effect',\n    rarity: rarity,\n    available: true,\n    category: event.category || detectCategory(event.description, event.effect)\n  };\n});\n\nreturn validatedEvents.map(e => ({ json: e }));"
+      },
+      "id": "parse_and_validate",
+      "name": "Parse and Validate Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO rng_events (description, effect, rarity, available) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.description }}"
+              },
+              {
+                "parameter": "={{ $json.effect }}"
+              },
+              {
+                "parameter": "={{ $json.rarity }}"
+              },
+              {
+                "parameter": true
+              }
+            ]
+          }
+        }
+      },
+      "id": "insert_events",
+      "name": "Insert Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE rng_events SET available = false WHERE last_issued < NOW() - INTERVAL '60 days' AND available = true RETURNING id, description",
+        "options": {}
+      },
+      "id": "retire_old_events",
+      "name": "Retire Old Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT rarity, COUNT(*) as count FROM rng_events WHERE available = true GROUP BY rarity",
+        "options": {}
+      },
+      "id": "analyze_distribution",
+      "name": "Analyze Event Distribution",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1250,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const insertedEvents = $('Insert Events').all();\nconst retiredEvents = $('Retire Old Events').all();\nconst distribution = $('Analyze Event Distribution').all().map(item => item.json);\n\nconst summary = {\n  timestamp: new Date().toISOString(),\n  eventsAdded: insertedEvents.length,\n  eventsRetired: retiredEvents.length,\n  currentDistribution: distribution.reduce((acc, d) => {\n    acc[d.rarity] = parseInt(d.count);\n    return acc;\n  }, {}),\n  totalActiveEvents: distribution.reduce((sum, d) => sum + parseInt(d.count), 0)\n};\n\nreturn [{ json: summary }];"
+      },
+      "id": "create_summary",
+      "name": "Create Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"system\",\n  \"actor_id\": 0,\n  \"target_type\": \"rng_events\",\n  \"target_id\": 0,\n  \"action\": \"event_seeder_monthly\",\n  \"detail\": $json,\n  \"outcome\": \"success\",\n  \"severity\": \"info\",\n  \"source\": \"event_seeder_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_system",
+      "name": "Log System (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1650,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.id, c.user_id FROM characters c WHERE c.last_login > NOW() - INTERVAL '7 days' LIMIT 100",
+        "options": {}
+      },
+      "id": "fetch_active_users",
+      "name": "Fetch Active Users for Notification",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        450,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO events (character_id, event_type, description) VALUES ($1, 'new_events_available', 'New random events have been added to the world! Check your daily surprises.')",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "notify_users",
+      "name": "Notify Users",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        650,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst month = now.getMonth() + 1;\nconst seasonalEvents = [];\n\nconst seasons = {\n  1: { name: 'New Year', theme: 'fresh starts and resolutions' },\n  2: { name: 'Winter', theme: 'cozy indoor activities' },\n  3: { name: 'Spring', theme: 'renewal and growth' },\n  4: { name: 'Spring', theme: 'renewal and growth' },\n  5: { name: 'Spring', theme: 'renewal and growth' },\n  6: { name: 'Summer', theme: 'outdoor adventures' },\n  7: { name: 'Summer', theme: 'outdoor adventures' },\n  8: { name: 'Summer', theme: 'outdoor adventures' },\n  9: { name: 'Autumn', theme: 'harvest and preparation' },\n  10: { name: 'Autumn', theme: 'harvest and preparation' },\n  11: { name: 'Autumn', theme: 'harvest and preparation' },\n  12: { name: 'Winter Holiday', theme: 'celebration and reflection' }\n};\n\nconst currentSeason = seasons[month];\n\nseasonalEvents.push({\n  description: `${currentSeason.name} Special: The season of ${currentSeason.theme} brings you inspiration!`,\n  effect: '+25 XP',\n  rarity: 'uncommon',\n  available: true\n});\n\nseasonalEvents.push({\n  description: `${currentSeason.name} Bonus: You feel energized by the ${currentSeason.name} atmosphere!`,\n  effect: '+10 HP, +10 coins',\n  rarity: 'rare',\n  available: true\n});\n\nseasonalEvents.push({\n  description: `${currentSeason.name} Challenge: Embrace the spirit of ${currentSeason.theme}!`,\n  effect: 'Random skill gains +15 XP',\n  rarity: 'common',\n  available: true\n});\n\nreturn seasonalEvents.map(e => ({ json: e }));"
+      },
+      "id": "generate_seasonal",
+      "name": "Generate Seasonal Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO rng_events (description, effect, rarity, available) VALUES ($1, $2, $3, $4) RETURNING id",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.description }}"
+              },
+              {
+                "parameter": "={{ $json.effect }}"
+              },
+              {
+                "parameter": "={{ $json.rarity }}"
+              },
+              {
+                "parameter": true
+              }
+            ]
+          }
+        }
+      },
+      "id": "insert_seasonal",
+      "name": "Insert Seasonal Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        850,
+        600
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM rng_events WHERE description LIKE '%Special:%' AND last_issued < NOW() - INTERVAL '40 days'",
+        "options": {}
+      },
+      "id": "cleanup_old_seasonal",
+      "name": "Cleanup Old Seasonal Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        450,
+        600
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule - Monthly (1st)": {
+      "main": [
+        [
+          {
+            "node": "Check Event Pool",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Active Users for Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Cleanup Old Seasonal Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Event Pool": {
+      "main": [
+        [
+          {
+            "node": "Generate Events (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Events (AI)": {
+      "main": [
+        [
+          {
+            "node": "Parse and Validate Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and Validate Events": {
+      "main": [
+        [
+          {
+            "node": "Insert Events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Retire Old Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Events": {
+      "main": [
+        [
+          {
+            "node": "Analyze Event Distribution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retire Old Events": {
+      "main": [
+        [
+          {
+            "node": "Analyze Event Distribution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Event Distribution": {
+      "main": [
+        [
+          {
+            "node": "Create Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Summary": {
+      "main": [
+        [
+          {
+            "node": "Log System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active Users for Notification": {
+      "main": [
+        [
+          {
+            "node": "Notify Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Old Seasonal Events": {
+      "main": [
+        [
+          {
+            "node": "Generate Seasonal Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Seasonal Events": {
+      "main": [
+        [
+          {
+            "node": "Insert Seasonal Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": true,
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T16:26:00.000Z",
+  "createdAt": "2025-10-30T16:26:00.000Z"
+}

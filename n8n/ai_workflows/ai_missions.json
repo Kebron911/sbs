@@ -1,0 +1,535 @@
+{
+  "name": "SBS_AI_MISSIONS_OPTIMIZED",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule_daily",
+      "name": "Schedule - Daily 6 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"SELECT c.id, c.user_id, c.level, c.xp, c.hp, c.coins, c.goals, c.class, u.username FROM characters c JOIN users u ON c.user_id = u.id WHERE c.last_login > NOW() - INTERVAL '7 days'\",\n  \"parameters\": [],\n  \"return_first_only\": false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch_active_users",
+      "name": "Fetch Active Users (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split_users",
+      "name": "Split Users",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-character-data",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $json.data.id,\n  \"user_id\": $json.data.user_id,\n  \"include_skills_details\": true,\n  \"include_habits_details\": true,\n  \"include_systems_details\": false,\n  \"include_routines_details\": false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch_character_data",
+      "name": "Fetch Character Data (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"SELECT s.id, s.name, s.category, s.current_stage, s.purpose, COUNT(r.id) as routine_count, ss.step as next_step FROM systems s LEFT JOIN routines r ON s.id = r.system_id LEFT JOIN system_steps ss ON s.id = ss.system_id AND ss.status = 'pending' WHERE s.user_id = $1 AND s.current_stage != 'complete' GROUP BY s.id, s.name, s.category, s.current_stage, s.purpose, ss.step ORDER BY s.created_at DESC LIMIT 3\",\n  \"parameters\": [$json.data.user_id],\n  \"return_first_only\": false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch_active_sbs_systems",
+      "name": "Fetch Active SBS Systems (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"SELECT event_type, COUNT(*) as count, SUM(xp_change) as total_xp FROM events WHERE character_id = $1 AND created_at > NOW() - INTERVAL '7 days' GROUP BY event_type\",\n  \"parameters\": [$json.data.id],\n  \"return_first_only\": false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch_recent_activity",
+      "name": "Fetch Recent Activity (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"SELECT p.title, COUNT(t.id) as total_tasks, SUM(CASE WHEN t.completed = true THEN 1 ELSE 0 END) as completed_tasks FROM projects p LEFT JOIN tasks t ON t.project_id = p.id WHERE p.character_id = $1 AND p.completed = false GROUP BY p.id, p.title ORDER BY p.deadline ASC LIMIT 3\",\n  \"parameters\": [$json.data.id],\n  \"return_first_only\": false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch_active_projects",
+      "name": "Fetch Active Projects (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        750
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"SELECT r.id, r.name, r.day_of_week, r.description, r.status, s.name as system_name, s.current_stage FROM routines r JOIN systems s ON r.system_id = s.id WHERE s.user_id = $1 AND r.status = 'active' ORDER BY r.created_at DESC LIMIT 3\",\n  \"parameters\": [$json.data.user_id],\n  \"return_first_only\": false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch_sbs_routines",
+      "name": "Fetch SBS Routines (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all user data for AI context with SBS focus using subflows\nconst userData = $('Split Users').first().json.data;\nconst characterData = $('Fetch Character Data (Subflow)').first().json.data;\nconst activities = $('Fetch Recent Activity (Subflow)').first().json.data || [];\nconst projects = $('Fetch Active Projects (Subflow)').first().json.data || [];\nconst sbsSystems = $('Fetch Active SBS Systems (Subflow)').first().json.data || [];\nconst sbsRoutines = $('Fetch SBS Routines (Subflow)').first().json.data || [];\n\n// Extract skills and habits from character data subflow\nconst topSkills = characterData.skills_details ? characterData.skills_details.slice(0, 3) : [];\nconst habitStreaks = characterData.habits_details ? characterData.habits_details.filter(h => h.type === 'good').slice(0, 5) : [];\n\nconst userContext = {\n  characterId: characterData.character.id,\n  username: userData.username,\n  level: characterData.character.level,\n  hp: characterData.character.hp,\n  coins: characterData.character.coins,\n  goals: userData.goals,\n  class: userData.class,\n  topSkills: topSkills,\n  recentActivity: activities,\n  habitStreaks: habitStreaks,\n  activeProjects: projects,\n  sbsSystems: sbsSystems,\n  sbsRoutines: sbsRoutines,\n  skillsStats: characterData.stats.skills,\n  habitsStats: characterData.stats.habits,\n  systemsStats: characterData.stats.systems,\n  routinesStats: characterData.stats.routines\n};\n\nreturn [{ json: { userContext } }];"
+      },
+      "id": "prepare_ai_context",
+      "name": "Prepare AI Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        475
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-ai-content",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"content_type\": \"sbs_missions\",\n  \"prompt\": \"Generate 3 SBS-focused missions that help users advance their systems, create routines, or progress through system stages (define → design → build → automate → review). FOCUS ON SBS INTEGRATION - suggest system modifications, routine optimization, or stage advancement rather than generic tasks. Return ONLY a JSON array: [{\\\"type\\\": \\\"sbs_system_advancement\\\"|\\\"sbs_routine_creation\\\"|\\\"sbs_system_optimization\\\", \\\"title\\\": \\\"Mission title\\\", \\\"description\\\": \\\"SBS-specific action\\\", \\\"target_system_id\\\": system_id_or_null, \\\"suggested_routine\\\": \\\"routine_description\\\", \\\"system_category\\\": \\\"category\\\", \\\"stage_focus\\\": \\\"define|design|build|automate|review\\\", \\\"xp\\\": 30, \\\"coins\\\": 15}]\",\n  \"context_data\": {\n    \"player_info\": {\n      \"username\": $json.userContext.username,\n      \"level\": $json.userContext.level,\n      \"class\": $json.userContext.class,\n      \"hp\": $json.userContext.hp,\n      \"coins\": $json.userContext.coins,\n      \"goals\": $json.userContext.goals || 'Not specified'\n    },\n    \"top_skills\": $json.userContext.topSkills.length > 0 ? $json.userContext.topSkills.map(s => s.name + ' (Lv' + s.level + ')').join(', ') : 'None',\n    \"sbs_systems\": $json.userContext.sbsSystems.length > 0 ? $json.userContext.sbsSystems.map(s => s.name + ' (' + s.current_stage + ' stage, next: ' + (s.next_step || 'complete') + ', category: ' + s.category + ')').join(', ') : 'None',\n    \"active_routines\": $json.userContext.sbsRoutines.length > 0 ? $json.userContext.sbsRoutines.map(r => r.name + ' (system: ' + r.system_name + ', stage: ' + r.current_stage + ')').join(', ') : 'None',\n    \"skills_stats\": $json.userContext.skillsStats,\n    \"habits_stats\": $json.userContext.habitsStats,\n    \"systems_stats\": $json.userContext.systemsStats,\n    \"routines_stats\": $json.userContext.routinesStats,\n    \"mission_count\": 3,\n    \"focus\": \"SBS system advancement, routine creation, and system optimization\"\n  },\n  \"ai_provider\": \"openai\",\n  \"model\": \"gpt-4\",\n  \"max_tokens\": 800,\n  \"temperature\": 0.8\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "generate_missions_ai",
+      "name": "Generate Missions (AI Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        475
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI subflow response and create SBS-focused missions\nconst response = $json.data?.content || $json.content || $json.choices?.[0]?.message?.content;\nlet missions = [];\n\ntry {\n  // Try to parse as JSON\n  const parsed = JSON.parse(response);\n  missions = Array.isArray(parsed) ? parsed : [parsed];\n} catch (e) {\n  // Try to extract JSON from markdown code blocks\n  const jsonMatch = response.match(/```json\\s*([\\s\\S]*?)```/);\n  if (jsonMatch) {\n    missions = JSON.parse(jsonMatch[1]);\n  } else {\n    // Try to find JSON array directly\n    const arrayMatch = response.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);\n    if (arrayMatch) {\n      missions = JSON.parse(arrayMatch[0]);\n    } else {\n      // Fallback SBS-focused missions if AI parsing fails\n      const userSystems = $('Prepare AI Context').first().json.userContext.sbsSystems;\n      const hasActiveSystems = userSystems && userSystems.length > 0;\n      \n      missions = [\n        {\n          type: 'sbs_system_advancement',\n          title: hasActiveSystems ? `Advance ${userSystems[0].name} System` : 'Create New SBS System',\n          description: hasActiveSystems ? `Move your ${userSystems[0].name} system from ${userSystems[0].current_stage} to the next stage` : 'Design and create a new automated system for an area of your life',\n          target_system_id: hasActiveSystems ? userSystems[0].id : null,\n          system_category: hasActiveSystems ? userSystems[0].category : 'mindset',\n          stage_focus: hasActiveSystems ? (userSystems[0].current_stage === 'define' ? 'design' : 'build') : 'define',\n          xp: 40,\n          coins: 20\n        },\n        {\n          type: 'sbs_routine_creation',\n          title: 'Optimize SBS Routine',\n          description: 'Review and improve one of your system routines for better automation',\n          system_category: 'health',\n          suggested_routine: 'Daily system review and optimization check',\n          xp: 30,\n          coins: 15\n        },\n        {\n          type: 'sbs_system_optimization',\n          title: 'SBS Infrastructure Review',\n          description: 'Analyze your current systems for integration opportunities and efficiency gains',\n          system_category: 'purpose',\n          stage_focus: 'review',\n          xp: 35,\n          coins: 18\n        }\n      ];\n    }\n  }\n}\n\n// Validate and enhance SBS missions\nconst characterId = $('Prepare AI Context').first().json.userContext.characterId;\nconst validatedMissions = missions.slice(0, 3).map((mission, index) => ({\n  characterId: characterId,\n  type: mission.type || 'sbs_system_advancement',\n  title: mission.title || `SBS Mission ${index + 1}`,\n  description: mission.description || 'Work on your System for Building Systems',\n  targetSystemId: mission.target_system_id || mission.targetSystemId || null,\n  suggestedRoutine: mission.suggested_routine || mission.suggestedRoutine || null,\n  systemCategory: mission.system_category || mission.systemCategory || 'general',\n  stageFocus: mission.stage_focus || mission.stageFocus || 'design',\n  xp: Math.min(Math.max(mission.xp || 30, 20), 60),\n  coins: Math.min(Math.max(mission.coins || 15, 10), 30)\n}));\n\nreturn validatedMissions.map(m => ({ json: m }));"
+      },
+      "id": "parse_ai_response",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        475
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "has_missions",
+              "leftValue": "={{ $json.characterId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_missions_generated",
+      "name": "Check Missions Generated",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        475
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"INSERT INTO missions (character_id, type, title, description, target_system_id, suggested_routine, system_category, stage_focus, xp_reward, coin_reward, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW()) RETURNING *\",\n  \"parameters\": [\n    $json.characterId,\n    $json.type,\n    $json.title,\n    $json.description,\n    $json.targetSystemId,\n    $json.suggestedRoutine,\n    $json.systemCategory,\n    $json.stageFocus,\n    $json.xp,\n    $json.coins\n  ],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "store_mission",
+      "name": "Store Mission (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        475
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"system\",\n  \"actor_id\": 0,\n  \"target_type\": \"character\",\n  \"target_id\": $json.characterId,\n  \"action\": \"missions_generated\",\n  \"detail\": {\n    \"mission_count\": 3,\n    \"mission_types\": [$json.type],\n    \"ai_enhanced\": true,\n    \"timestamp\": new Date().toISOString()\n  },\n  \"outcome\": \"success\",\n  \"severity\": \"info\",\n  \"source\": \"ai_missions_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_mission_generation",
+      "name": "Log Mission Generation (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2050,
+        475
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-respond-to-webhook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"response_body\": {\n    \"success\": true,\n    \"message\": \"SBS missions generated successfully\",\n    \"missions_created\": $('Parse AI Response').all().length,\n    \"character_id\": $('Parse AI Response').first().json.characterId,\n    \"timestamp\": new Date().toISOString()\n  },\n  \"status_code\": 200,\n  \"headers\": {\n    \"Content-Type\": \"application/json\"\n  }\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "respond_to_webhook",
+      "name": "Respond to Webhook (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2250,
+        475
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule - Daily 6 AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Active Users (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active Users (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Split Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Users": {
+      "main": [
+        [
+          {
+            "node": "Fetch Character Data (Subflow)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Active SBS Systems (Subflow)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Recent Activity (Subflow)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Active Projects (Subflow)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch SBS Routines (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Character Data (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active SBS Systems (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Activity (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active Projects (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch SBS Routines (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Missions (AI Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Missions (AI Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Check Missions Generated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Missions Generated": {
+      "main": [
+        [
+          {
+            "node": "Store Mission (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Mission (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Log Mission Generation (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Mission Generation (Subflow)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": true,
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T16:25:57.000Z",
+  "createdAt": "2025-10-30T16:25:57.000Z"
+}

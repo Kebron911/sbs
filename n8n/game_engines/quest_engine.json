@@ -1,0 +1,555 @@
+﻿{
+  "name": "QUEST_ENGINE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "complete-task",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_task_complete",
+      "name": "Webhook - Task Complete",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "task-complete"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.*, p.title as project_title, p.difficulty as project_difficulty, p.area_id, c.level as character_level, c.id as character_id FROM tasks t JOIN projects p ON t.project_id = p.id JOIN characters c ON p.character_id = c.id WHERE t.id = $1 AND t.completed = false",
+        "options": {}
+      },
+      "id": "fetch_task_data",
+      "name": "Fetch Task Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate quest rewards with difficulty multipliers\nconst taskData = $input.first().json;\nconst baseXP = taskData.xp || 20;\nconst baseCoins = taskData.coins || 10;\nconst difficulty = taskData.difficulty || 'medium';\n\n// Difficulty multipliers\nconst difficultyMultipliers = {\n  'easy': 1.0,\n  'tutorial': 1.0,\n  'medium': 1.5,\n  'hard': 2.0,\n  'epic': 3.0,\n  'legendary': 5.0\n};\n\nconst multiplier = difficultyMultipliers[difficulty] || 1.5;\n\n// Apply multiplier\nconst finalXP = Math.floor(baseXP * multiplier);\nconst finalCoins = Math.floor(baseCoins * multiplier);\n\n// Bonus for completing within deadline (if deadline exists)\nlet timeBonus = 0;\nif (taskData.deadline) {\n  const deadline = new Date(taskData.deadline);\n  const now = new Date();\n  if (now <= deadline) {\n    timeBonus = Math.floor(finalXP * 0.2); // 20% bonus for on-time completion\n  }\n}\n\nconst totalXP = finalXP + timeBonus;\n\nreturn [{\n  json: {\n    taskId: taskData.id,\n    projectId: taskData.project_id,\n    characterId: taskData.character_id,\n    areaId: taskData.area_id,\n    xpEarned: totalXP,\n    coinsEarned: finalCoins,\n    timeBonus: timeBonus,\n    difficulty: difficulty,\n    multiplier: multiplier,\n    taskTitle: taskData.title\n  }\n}];"
+      },
+      "id": "calculate_quest_rewards",
+      "name": "Calculate Quest Rewards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"UPDATE tasks SET completed = true WHERE id = $1 RETURNING *\",\n  \"parameters\": [$json.body.task_id],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "mark_task_complete",
+      "name": "Mark Task Complete (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.id, s.name FROM skills s JOIN areas a ON s.character_id = a.character_id WHERE a.id = $1 AND s.character_id = $2 LIMIT 1",
+        "options": {}
+      },
+      "id": "find_related_skill",
+      "name": "Find Related Skill",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-character-progression",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $('Calculate Quest Rewards').item.json.characterId }}"
+            },
+            {
+              "name": "skill_id",
+              "value": "={{ $('Find Related Skill').item.json.id }}"
+            },
+            {
+              "name": "xp_gained",
+              "value": "={{ $('Calculate Quest Rewards').item.json.xpEarned }}"
+            },
+            {
+              "name": "coins_gained",
+              "value": "={{ $('Calculate Quest Rewards').item.json.coinsEarned }}"
+            },
+            {
+              "name": "skill_xp_gained",
+              "value": "={{ Math.floor($('Calculate Quest Rewards').item.json.xpEarned * 0.3) }}"
+            },
+            {
+              "name": "progression_type",
+              "value": "quest_completion"
+            },
+            {
+              "name": "source_name",
+              "value": "={{ $('Calculate Quest Rewards').item.json.taskTitle }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update_character_progression_quest",
+      "name": "Update Character Progression",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "prestige_eligible_quest",
+              "leftValue": "={{ $('Update Character Progression').item.json.prestige_eligible }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "if_prestige_quest",
+      "name": "If Prestige Eligible",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/prestige-eligibility",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $('Check Prestige Eligibility').item.json.character_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_prestige_quest",
+      "name": "Trigger Prestige Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-achievement-check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $('Check Prestige Eligibility').item.json.character_id }}"
+            },
+            {
+              "name": "trigger_source",
+              "value": "quest_completion"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_quest_achievements",
+      "name": "Trigger SBS Achievement Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as completed_count, COUNT(*) FILTER (WHERE completed = false) as remaining_count FROM tasks WHERE project_id = $1",
+        "options": {}
+      },
+      "id": "check_project_completion",
+      "name": "Check Project Completion",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.remaining_count }}",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "is_project_complete",
+      "name": "Project Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"UPDATE projects SET completed = true WHERE id = $1 RETURNING *\",\n  \"parameters\": [$('Check Project Progress').item.json.project_id],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "complete_project",
+      "name": "Complete Project (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"INSERT INTO archive (character_id, project_id, completed_on, xp_earned, coins_earned) VALUES ($1, $2, NOW(), $3, $4) RETURNING *\",\n  \"parameters\": [\n    $('Complete Project (Subflow)').item.json.data.character_id,\n    $('Complete Project (Subflow)').item.json.data.id,\n    $('Calculate Quest Rewards').item.json.xp_reward,\n    $('Calculate Quest Rewards').item.json.coin_reward\n  ],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "archive_project",
+      "name": "Archive Project (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Update Character Stats').item.json.id,\n  \"event_type\": \"task_completed\",\n  \"xp_change\": $('Calculate Quest Rewards').item.json.xp_reward,\n  \"coins_change\": $('Calculate Quest Rewards').item.json.coin_reward,\n  \"description\": \"Quest task completed: \" + $('Update Task Status').item.json.name\n} }}",
+        "options": {}
+      },
+      "id": "log_quest_event",
+      "name": "Log Quest Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2.4,
+      "position": [2050, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"user\",\n  \"actor_id\": $json.character_id,\n  \"target_type\": \"task\",\n  \"target_id\": $json.task_id,\n  \"action\": \"task_completed\",\n  \"detail\": {\n    \"project_id\": $json.project_id,\n    \"xp_gained\": $json.xp_gained,\n    \"coins_gained\": $json.coins_gained,\n    \"skill_progression\": $json.skill_progression\n  },\n  \"outcome\": \"success\",\n  \"severity\": \"info\",\n  \"source\": \"quest_engine_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_system_quest",
+      "name": "Log System (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2250, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"xpEarned\": $('Calculate Quest Rewards').item.json.xpEarned,\n  \"coinsEarned\": $('Calculate Quest Rewards').item.json.coinsEarned,\n  \"timeBonus\": $('Calculate Quest Rewards').item.json.timeBonus,\n  \"projectComplete\": $('Project Complete?').item.json.remaining_count === 0,\n  \"message\": \"Quest completed! You're making great progress!\"\n} }}",
+        "options": {}
+      },
+      "id": "respond_quest_success",
+      "name": "Respond Quest Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2450, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Task Complete": {
+      "main": [
+        [
+          {
+            "node": "Fetch Task Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Task Data": {
+      "main": [
+        [
+          {
+            "node": "Calculate Quest Rewards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Quest Rewards": {
+      "main": [
+        [
+          {
+            "node": "Mark Task Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Task Complete": {
+      "main": [
+        [
+          {
+            "node": "Find Related Skill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Related Skill": {
+      "main": [
+        [
+          {
+            "node": "Update Character Progression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Character Progression": {
+      "main": [
+        [
+          {
+            "node": "If Prestige Eligible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Prestige Eligible": {
+      "main": [
+        [
+          {
+            "node": "Trigger Prestige Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Project Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Prestige Check": {
+      "main": [
+        [
+          {
+            "node": "Check Project Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Project Completion": {
+      "main": [
+        [
+          {
+            "node": "Project Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Project Complete?": {
+      "main": [
+        [
+          {
+            "node": "Complete Project",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Complete Project": {
+      "main": [
+        [
+          {
+            "node": "Archive Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Archive Project": {
+      "main": [
+        [
+          {
+            "node": "Log Quest Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Quest Event": {
+      "main": [
+        [
+          {
+            "node": "Log System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System": {
+      "main": [
+        [
+          {
+            "node": "Trigger SBS Achievement Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger SBS Achievement Check": {
+      "main": [
+        [
+          {
+            "node": "Respond Quest Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "life-game-production"
+  },
+  "id": "4",
+  "tags": []
+}
+

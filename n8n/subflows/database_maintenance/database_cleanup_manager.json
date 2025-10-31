@@ -1,0 +1,364 @@
+{
+  "name": "🧹 Database Cleanup Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "db-cleanup-manager",
+        "options": {}
+      },
+      "id": "c4fa83f9-fa4a-4038-92a4-a4918442ca03",
+      "name": "Webhook - Cleanup Manager",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -976,
+        400
+      ],
+      "webhookId": "db-cleanup-manager"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Clean up old system logs based on retention policy\nWITH cleanup_stats AS (\n  DELETE FROM system_logs \n  WHERE created_at < NOW() - INTERVAL '{{ $json.retention_days || 90 }} days'\n    AND (retention_until IS NULL OR retention_until < NOW())\n  RETURNING *\n),\nold_events AS (\n  DELETE FROM events \n  WHERE event_date < NOW() - INTERVAL '{{ $json.retention_days || 90 }} days'\n  RETURNING *\n),\nold_ai_logs AS (\n  DELETE FROM ai_logs \n  WHERE timestamp < NOW() - INTERVAL '{{ $json.retention_days || 90 }} days'\n  RETURNING *\n)\nSELECT \n  'cleanup_completed' as status,\n  (SELECT count(*) FROM cleanup_stats) as system_logs_deleted,\n  (SELECT count(*) FROM old_events) as events_deleted,\n  (SELECT count(*) FROM old_ai_logs) as ai_logs_deleted,\n  NOW() as cleanup_timestamp;",
+        "options": {}
+      },
+      "id": "cd4697ef-610f-4523-8185-8ef93502650b",
+      "name": "Cleanup Old Logs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -304,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Find and clean up orphaned records\nWITH orphaned_skills AS (\n  DELETE FROM skills \n  WHERE character_id NOT IN (SELECT id FROM characters)\n  RETURNING *\n),\norphaned_habits AS (\n  DELETE FROM habits \n  WHERE character_id NOT IN (SELECT id FROM characters)\n  RETURNING *\n),\norphaned_projects AS (\n  DELETE FROM projects \n  WHERE character_id NOT IN (SELECT id FROM characters)\n  RETURNING *\n),\norphaned_tasks AS (\n  DELETE FROM tasks \n  WHERE project_id NOT IN (SELECT id FROM projects)\n  RETURNING *\n),\norphaned_inventory AS (\n  DELETE FROM inventory \n  WHERE character_id NOT IN (SELECT id FROM characters)\n  RETURNING *\n),\norphaned_system_logs AS (\n  DELETE FROM system_logs \n  WHERE character_id IS NOT NULL \n    AND character_id NOT IN (SELECT id FROM characters)\n  RETURNING *\n),\norphaned_routines AS (\n  DELETE FROM routines \n  WHERE system_id NOT IN (SELECT id FROM systems)\n  RETURNING *\n)\nSELECT \n  'orphan_cleanup_completed' as status,\n  (SELECT count(*) FROM orphaned_skills) as orphaned_skills_deleted,\n  (SELECT count(*) FROM orphaned_habits) as orphaned_habits_deleted,\n  (SELECT count(*) FROM orphaned_projects) as orphaned_projects_deleted,\n  (SELECT count(*) FROM orphaned_tasks) as orphaned_tasks_deleted,\n  (SELECT count(*) FROM orphaned_inventory) as orphaned_inventory_deleted,\n  (SELECT count(*) FROM orphaned_system_logs) as orphaned_system_logs_deleted,\n  (SELECT count(*) FROM orphaned_routines) as orphaned_routines_deleted,\n  NOW() as cleanup_timestamp;",
+        "options": {}
+      },
+      "id": "681b7483-612e-449e-9ed8-2b71dd848093",
+      "name": "Cleanup Orphaned Records",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -304,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get tables that need vacuum based on dead tuple percentage\nSELECT \n    schemaname,\n    tablename,\n    pg_stat_get_live_tuples(c.oid) as live_tuples,\n    pg_stat_get_dead_tuples(c.oid) as dead_tuples,\n    CASE \n        WHEN pg_stat_get_live_tuples(c.oid) > 0 \n        THEN round((pg_stat_get_dead_tuples(c.oid)::float / pg_stat_get_live_tuples(c.oid)::float) * 100, 2)\n        ELSE 0\n    END as dead_tuple_percentage,\n    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as table_size,\n    last_vacuum,\n    last_autovacuum\nFROM pg_tables pt\nJOIN pg_class c ON c.relname = pt.tablename\nJOIN pg_stat_user_tables sut ON sut.relname = pt.tablename\nWHERE schemaname = 'public'\n  AND (\n    pg_stat_get_dead_tuples(c.oid) > 1000 \n    OR (\n      pg_stat_get_live_tuples(c.oid) > 0 \n      AND (pg_stat_get_dead_tuples(c.oid)::float / pg_stat_get_live_tuples(c.oid)::float) > 0.1\n    )\n  )\nORDER BY dead_tuple_percentage DESC;",
+        "options": {}
+      },
+      "id": "1eafae27-2b50-4aed-95d7-032509608d4a",
+      "name": "Identify Tables for Vacuum",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -480,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process vacuum recommendations and execute if needed\nconst vacuumCandidates = $input.all();\nconst autoExecute = $('Webhook - Cleanup Manager').first().json.auto_execute || false;\nconst maxTables = $('Webhook - Cleanup Manager').first().json.max_tables || 5;\n\nconst results = {\n  timestamp: new Date().toISOString(),\n  operation: 'vacuum_analysis',\n  candidates_found: vacuumCandidates.length,\n  auto_execute: autoExecute,\n  tables_analyzed: [],\n  vacuum_commands: [],\n  recommendations: []\n};\n\n// Process each table candidate\nvacuumCandidates.slice(0, maxTables).forEach(table => {\n  const deadPercentage = parseFloat(table.dead_tuple_percentage);\n  \n  results.tables_analyzed.push({\n    table: table.tablename,\n    dead_tuple_percentage: deadPercentage,\n    table_size: table.table_size,\n    last_vacuum: table.last_vacuum,\n    priority: deadPercentage > 20 ? 'HIGH' : deadPercentage > 10 ? 'MEDIUM' : 'LOW'\n  });\n  \n  // Generate vacuum command\n  const vacuumType = deadPercentage > 30 ? 'VACUUM FULL' : 'VACUUM';\n  const vacuumCommand = `${vacuumType} ANALYZE ${table.tablename};`;\n  \n  results.vacuum_commands.push({\n    table: table.tablename,\n    command: vacuumCommand,\n    type: vacuumType,\n    reason: `Dead tuple percentage: ${deadPercentage}%`\n  });\n  \n  // Add recommendations\n  if (deadPercentage > 30) {\n    results.recommendations.push({\n      table: table.tablename,\n      priority: 'CRITICAL',\n      action: `Execute VACUUM FULL immediately - ${deadPercentage}% dead tuples`,\n      impact: 'High I/O, table will be locked during operation'\n    });\n  } else if (deadPercentage > 20) {\n    results.recommendations.push({\n      table: table.tablename,\n      priority: 'HIGH',\n      action: `Schedule VACUUM during low-traffic period - ${deadPercentage}% dead tuples`,\n      impact: 'Moderate I/O, minimal locking'\n    });\n  }\n});\n\nreturn { json: results };"
+      },
+      "id": "cc2d8725-4a98-4513-9125-be6389d4e321",
+      "name": "Process Vacuum Recommendations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Find potential duplicate records across key tables\nWITH user_duplicates AS (\n  SELECT \n    'users' as table_name,\n    'email' as duplicate_field,\n    email as duplicate_value,\n    count(*) as duplicate_count,\n    array_agg(id) as duplicate_ids\n  FROM users \n  GROUP BY email \n  HAVING count(*) > 1\n  \n  UNION ALL\n  \n  SELECT \n    'users' as table_name,\n    'username' as duplicate_field,\n    username as duplicate_value,\n    count(*) as duplicate_count,\n    array_agg(id) as duplicate_ids\n  FROM users \n  GROUP BY username \n  HAVING count(*) > 1\n),\nhabit_duplicates AS (\n  SELECT \n    'habits' as table_name,\n    'name_character' as duplicate_field,\n    name || ' (character_id: ' || character_id || ')' as duplicate_value,\n    count(*) as duplicate_count,\n    array_agg(id) as duplicate_ids\n  FROM habits \n  GROUP BY name, character_id \n  HAVING count(*) > 1\n),\nsystem_duplicates AS (\n  SELECT \n    'systems' as table_name,\n    'name_owner' as duplicate_field,\n    name || ' (owner: ' || owner_type || '_' || owner_id || ')' as duplicate_value,\n    count(*) as duplicate_count,\n    array_agg(id) as duplicate_ids\n  FROM systems \n  GROUP BY name, owner_type, owner_id \n  HAVING count(*) > 1\n)\nSELECT \n  table_name,\n  duplicate_field,\n  duplicate_value,\n  duplicate_count,\n  duplicate_ids,\n  'manual_review_required' as recommended_action\nFROM (\n  SELECT * FROM user_duplicates\n  UNION ALL\n  SELECT * FROM habit_duplicates\n  UNION ALL\n  SELECT * FROM system_duplicates\n) all_duplicates\nORDER BY table_name, duplicate_count DESC;",
+        "options": {}
+      },
+      "id": "1ca1d8a0-c32c-41b7-8876-d4cbbce119e2",
+      "name": "Find Duplicate Records",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -304,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consolidate all cleanup results\nconst webhookData = $('Webhook - Cleanup Manager').first().json;\nconst operation = webhookData.operation;\n\nlet results = {\n  timestamp: new Date().toISOString(),\n  operation: operation,\n  status: 'completed',\n  summary: {},\n  details: {},\n  recommendations: []\n};\n\n// Process different types of cleanup results\nif (operation === 'cleanup_logs') {\n  const logCleanup = $input.first().json;\n  results.summary = {\n    system_logs_deleted: logCleanup.system_logs_deleted,\n    events_deleted: logCleanup.events_deleted,\n    ai_logs_deleted: logCleanup.ai_logs_deleted,\n    total_records_deleted: logCleanup.system_logs_deleted + logCleanup.events_deleted + logCleanup.ai_logs_deleted\n  };\n  results.details = logCleanup;\n  \n  if (results.summary.total_records_deleted > 0) {\n    results.recommendations.push({\n      type: 'maintenance',\n      priority: 'low',\n      description: `Successfully cleaned up ${results.summary.total_records_deleted} old log records`,\n      action: 'Consider running VACUUM on affected tables to reclaim space'\n    });\n  }\n  \n} else if (operation === 'cleanup_orphans') {\n  const orphanCleanup = $input.first().json;\n  const totalOrphans = orphanCleanup.orphaned_skills_deleted + \n                      orphanCleanup.orphaned_habits_deleted + \n                      orphanCleanup.orphaned_projects_deleted + \n                      orphanCleanup.orphaned_tasks_deleted + \n                      orphanCleanup.orphaned_inventory_deleted + \n                      orphanCleanup.orphaned_system_logs_deleted + \n                      orphanCleanup.orphaned_routines_deleted;\n  \n  results.summary = {\n    total_orphaned_records_deleted: totalOrphans,\n    tables_cleaned: 7\n  };\n  results.details = orphanCleanup;\n  \n  if (totalOrphans > 0) {\n    results.recommendations.push({\n      type: 'data_integrity',\n      priority: 'medium',\n      description: `Found and cleaned ${totalOrphans} orphaned records`,\n      action: 'Review application logic to prevent future orphaned records'\n    });\n  }\n  \n} else if (operation === 'vacuum_tables') {\n  results = $input.first().json;\n  \n} else if (operation === 'duplicate_check') {\n  const duplicates = $input.all();\n  results.summary = {\n    tables_checked: 3,\n    duplicate_groups_found: duplicates.length,\n    total_duplicate_records: duplicates.reduce((sum, dup) => sum + dup.duplicate_count, 0)\n  };\n  results.details = { duplicates: duplicates };\n  \n  if (duplicates.length > 0) {\n    results.recommendations.push({\n      type: 'data_quality',\n      priority: 'high',\n      description: `Found ${duplicates.length} groups of duplicate records`,\n      action: 'Manual review required - check duplicate_ids for resolution'\n    });\n  }\n}\n\nreturn { json: results };"
+      },
+      "id": "ea64c528-d29a-4c5c-ac61-e773004c5996",
+      "name": "Consolidate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "89aff22c-ee0f-40cd-b7c5-25cdfdee5ce7",
+      "name": "Return Cleanup Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        144,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "cleanup_logs",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "8510f771-17a3-4fd5-a206-1b780f41e47e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Logs"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1f0c4af9-b2e6-484d-819b-e0d998ad98cb",
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "cleanup_orphans",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Orphans"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ea3650f9-8f76-4cff-847e-b0a109886fd0",
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "vacuum_tables",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Vacuum"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ce7b44a4-2a59-4e7b-bd5d-2e961ae73fa0",
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "duplicate_check",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Duplicates"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -752,
+        368
+      ],
+      "id": "60e2544d-c430-47f7-bc3b-19100c1bc0aa",
+      "name": "Switch"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Cleanup Manager": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Old Logs": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Orphaned Records": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identify Tables for Vacuum": {
+      "main": [
+        [
+          {
+            "node": "Process Vacuum Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Vacuum Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Duplicate Records": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidate Results": {
+      "main": [
+        [
+          {
+            "node": "Return Cleanup Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Old Logs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cleanup Orphaned Records",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Identify Tables for Vacuum",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Find Duplicate Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "pdKacnGmVpz9Cmio",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

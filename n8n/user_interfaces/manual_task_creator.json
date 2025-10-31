@@ -1,0 +1,556 @@
+{
+  "name": "MANUAL_TASK_CREATOR",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-manual-task",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "910f07c6-81fe-44fb-989b-9fc164aefb6e",
+      "name": "Webhook - Create Manual Task1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1840,
+        1072
+      ],
+      "webhookId": "create-manual-task"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user_id_check",
+              "leftValue": "={{ $json.body.user_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "title_check",
+              "leftValue": "={{ $json.body.title }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8ee0232a-839d-4c7e-b0a0-7c5f5a34a1d5",
+      "name": "Validate Input1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1680,
+        1072
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-data",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"user_id\": $('Webhook - Create Manual Task1').item.json.body.user_id,\n  \"include_skills\": false,\n  \"include_habits\": false,\n  \"include_systems\": true,\n  \"include_achievements\": false\n} }}",
+        "options": {}
+      },
+      "id": "d386b331-8571-4545-86cc-7c34f4026608",
+      "name": "Get Character Info1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1472,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process manual task creation with custom XP/coin assignment\nconst taskData = $('Webhook - Create Manual Task1').item.json.body;\nconst characterInfo = $('Get Character Info1').item.json;\n\n// Default values for manual tasks\nconst defaults = {\n  xp: 20,\n  coins: 10,\n  difficulty: 'medium',\n  priority: 'normal',\n  category: 'general'\n};\n\n// Use provided values or defaults\nconst finalXP = taskData.xp || defaults.xp;\nconst finalCoins = taskData.coins || defaults.coins;\nconst difficulty = taskData.difficulty || defaults.difficulty;\nconst priority = taskData.priority || defaults.priority;\nconst category = taskData.category || characterInfo.category || defaults.category;\n\n// Calculate deadline (default 7 days if not provided)\nlet deadline = null;\nif (taskData.deadline) {\n  deadline = new Date(taskData.deadline);\n} else if (taskData.days_to_complete) {\n  deadline = new Date();\n  deadline.setDate(deadline.getDate() + parseInt(taskData.days_to_complete));\n} else {\n  deadline = new Date();\n  deadline.setDate(deadline.getDate() + 7); // Default 7 days\n}\n\n// Determine task type and integration\nconst taskType = taskData.task_type || 'manual';\nconst sbsIntegrated = taskData.sbs_integrated || false;\nconst systemId = taskData.system_id || null;\n\nreturn {\n  json: {\n    character_id: characterInfo.id,\n    user_id: taskData.user_id,\n    title: taskData.title,\n    description: taskData.description || '',\n    xp: finalXP,\n    coins: finalCoins,\n    difficulty: difficulty,\n    priority: priority,\n    category: category,\n    deadline: deadline.toISOString(),\n    task_type: taskType,\n    sbs_integrated: sbsIntegrated,\n    system_id: systemId,\n    created_by: taskData.created_by || 'manual',\n    tags: taskData.tags || [],\n    requirements: taskData.requirements || '',\n    success_criteria: taskData.success_criteria || ''\n  }\n};"
+      },
+      "id": "3fe9e4c8-5363-4cd9-b884-93fa5a8792b3",
+      "name": "Process Task Data1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1248,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-ai-content-generation",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"content_type\": \"task_description\",\n  \"character_id\": $json.character_id,\n  \"context\": {\n    \"task_title\": $json.title,\n    \"task_category\": $json.category,\n    \"difficulty\": $json.difficulty,\n    \"priority\": $json.priority,\n    \"sbs_integrated\": $json.sbs_integrated,\n    \"system_id\": $json.system_id,\n    \"requirements\": $json.requirements,\n    \"success_criteria\": $json.success_criteria,\n    \"original_description\": $json.description\n  }\n} }}",
+        "options": {}
+      },
+      "id": "enhance_task_description",
+      "name": "Enhance Task Description",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1100,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI-enhanced task description\nconst originalData = $('Process Task Data1').item.json;\nconst aiResponse = $json;\n\n// Check if we should enhance the description (empty or very short)\nconst shouldEnhance = !originalData.description || originalData.description.length < 10;\n\n// Try to parse AI response, fallback to original description if AI fails\nlet enhancedDescription = originalData.description;\nif (shouldEnhance) {\n  try {\n    if (aiResponse.content && typeof aiResponse.content === 'string') {\n      const parsedContent = JSON.parse(aiResponse.content);\n      if (parsedContent.description && parsedContent.description.length > 10) {\n        enhancedDescription = parsedContent.description;\n      }\n    }\n  } catch (error) {\n    // Fallback to a simple generated description if AI fails\n    if (!originalData.description) {\n      enhancedDescription = `Complete the ${originalData.category} task: ${originalData.title}`;\n    }\n  }\n}\n\nreturn {\n  json: {\n    ...originalData,\n    description: enhancedDescription,\n    ai_enhanced: enhancedDescription !== originalData.description && shouldEnhance\n  }\n};"
+      },
+      "id": "process_ai_task_description",
+      "name": "Process AI Task Description",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -950,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "project_id_check",
+              "leftValue": "={{ $('Webhook - Create Manual Task1').item.json.body.project_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bbb38aaa-4eb2-4656-959c-21a88fb60605",
+      "name": "Needs Project Creation?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO projects (character_id, title, description, total_xp, coin_reward, difficulty, completed, category, created_by) VALUES ($1, $2, $3, $4, $5, $6, false, $7, 'manual_task_creator') RETURNING *",
+        "options": {}
+      },
+      "id": "45558bd8-1ee5-4348-a66b-8d8f5b629882",
+      "name": "Create Project1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -800,
+        928
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO tasks (project_id, title, description, xp, coins, difficulty, deadline, completed, task_type, sbs_integrated, system_id, priority, requirements, success_criteria, tags) VALUES ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11, $12, $13, $14) RETURNING *",
+        "additionalFields": {
+          "queryParameters": "={{ [$('Get Project ID').item.json.id, $json.title, $json.description, $json.xp, $json.coins, $json.difficulty, $json.deadline, $json.task_type, $json.sbs_integrated, $json.system_id, $json.priority, $json.requirements, $json.success_criteria, JSON.stringify($json.tags)] }}"
+        },
+        "options": {}
+      },
+      "id": "4948e72e-14db-4080-a6b5-302d98b5e789",
+      "name": "Create Manual Task1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -800,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sbs_integration_check",
+              "leftValue": "={{ $('Process Task Data1').item.json.sbs_integrated }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7fd34b61-295d-4deb-8b07-45a4af407f27",
+      "name": "Check SBS Integration1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-trigger-skill-progression",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Process Task Data1').item.json.system_id }}"
+            },
+            {
+              "name": "progression_type",
+              "value": "manual_task_creation"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "29eaada6-3542-4b76-a499-9129f3f80546",
+      "name": "Trigger SBS Progression1 (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -352,
+        928
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Validate Character').item.json.id,\n  \"event_type\": \"manual_task_created\",\n  \"description\": \"Manual task created: \" + $('Create Task').item.json.name,\n  \"metadata\": {\n    \"task_id\": $('Create Task').item.json.id,\n    \"task_name\": $('Create Task').item.json.name,\n    \"difficulty\": $('Create Task').item.json.difficulty\n  }\n} }}",
+        "options": {}
+      },
+      "id": "51f87553-139a-45b0-a2b3-db46a0881469",
+      "name": "Log Task Creation1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2.4,
+      "position": [
+        -352,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "immediate_completion_check",
+              "leftValue": "={{ $('Webhook - Create Manual Task1').item.json.body.complete_immediately }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "32421581-4f76-489c-8889-0cf105494cab",
+      "name": "Check Immediate Completion1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/complete-task",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "task_id",
+              "value": "={{ $('Create Manual Task1').item.json.id }}"
+            },
+            {
+              "name": "completion_notes",
+              "value": "Automatically completed via manual task creator"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2cf1c43c-5cc7-41f3-992f-b39f2976a3a7",
+      "name": "Complete Task Immediately1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        928
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \n  \"success\": true,\n  \"task\": {\n    \"id\": $('Create Manual Task1').item.json.id,\n    \"title\": $('Create Manual Task1').item.json.title,\n    \"description\": $('Create Manual Task1').item.json.description,\n    \"xp\": $('Create Manual Task1').item.json.xp,\n    \"coins\": $('Create Manual Task1').item.json.coins,\n    \"difficulty\": $('Create Manual Task1').item.json.difficulty,\n    \"deadline\": $('Create Manual Task1').item.json.deadline,\n    \"task_type\": $('Create Manual Task1').item.json.task_type,\n    \"sbs_integrated\": $('Create Manual Task1').item.json.sbs_integrated\n  },\n  \"project\": {\n    \"id\": $('Create Manual Task1').item.json.project_id,\n    \"created_new\": $('Needs Project Creation?1').first() ? true : false\n  },\n  \"integration\": {\n    \"sbs_progression_triggered\": $('Process Task Data1').item.json.sbs_integrated,\n    \"completed_immediately\": $('Webhook - Create Manual Task1').item.json.body.complete_immediately || false\n  },\n  \"message\": \"Manual task '\" + $('Create Manual Task1').item.json.title + \"' created successfully with \" + $('Create Manual Task1').item.json.xp + \" XP and \" + $('Create Manual Task1').item.json.coins + \" coins!\"\n} }}",
+        "options": {}
+      },
+      "id": "b7e8a3ce-e7d0-4489-be24-b50e5a3ae9d3",
+      "name": "Respond Success1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        288,
+        1024
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": false, \"error\": \"Missing required fields: user_id and title are required\" } }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "f64acd48-226d-4aa0-8ca5-9c0767c780d1",
+      "name": "Respond Error1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1472,
+        1216
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Create Manual Task1": {
+      "main": [
+        [
+          {
+            "node": "Validate Input1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input1": {
+      "main": [
+        [
+          {
+            "node": "Get Character Info1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Character Info1": {
+      "main": [
+        [
+          {
+            "node": "Process Task Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Task Data1": {
+      "main": [
+        [
+          {
+            "node": "Needs Project Creation?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Project Creation?1": {
+      "main": [
+        [
+          {
+            "node": "Create Project1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Manual Task1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Project1": {
+      "main": [
+        [
+          {
+            "node": "Check SBS Integration1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Manual Task1": {
+      "main": [
+        [
+          {
+            "node": "Check SBS Integration1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check SBS Integration1": {
+      "main": [
+        [
+          {
+            "node": "Trigger SBS Progression1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Task Creation1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger SBS Progression1": {
+      "main": [
+        [
+          {
+            "node": "Check Immediate Completion1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Task Creation1": {
+      "main": [
+        [
+          {
+            "node": "Check Immediate Completion1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Immediate Completion1": {
+      "main": [
+        [
+          {
+            "node": "Complete Task Immediately1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Task Immediately1": {
+      "main": [
+        [
+          {
+            "node": "Respond Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "R7Wx0Xm5P4urnZ97",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

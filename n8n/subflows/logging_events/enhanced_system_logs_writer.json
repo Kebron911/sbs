@@ -1,0 +1,268 @@
+{
+  "name": "Enhanced System Logs Writer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-enhanced-system-logs",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_system_logs",
+      "name": "Webhook - Enhanced System Logs",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-enhanced-system-logs"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced System Logging Engine\nconst requestData = $json;\nconst systemId = requestData.system_id;\nconst eventType = requestData.event || requestData.event_type;\nconst eventDetails = requestData.details || requestData.event_details || {};\nconst logLevel = requestData.log_level || 'info'; // debug, info, warning, error, critical\nconst characterId = requestData.character_id || null;\nconst userId = requestData.user_id || null;\nconst source = requestData.source || 'system';\nconst tags = requestData.tags || [];\nconst correlationId = requestData.correlation_id || null;\nconst sessionId = requestData.session_id || null;\n\n// Validate required fields\nif (!eventType) {\n  return {\n    json: {\n      success: false,\n      error: 'event_type is required',\n      statusCode: 400\n    }\n  };\n}\n\n// Enhanced event categorization and metadata\nconst eventCategories = {\n  // System lifecycle events\n  system_created: { category: 'lifecycle', severity: 'info', retention_days: 365 },\n  system_updated: { category: 'lifecycle', severity: 'info', retention_days: 90 },\n  system_deleted: { category: 'lifecycle', severity: 'warning', retention_days: 365 },\n  system_archived: { category: 'lifecycle', severity: 'info', retention_days: 365 },\n  \n  // Stage progression events\n  stage_advanced: { category: 'progression', severity: 'info', retention_days: 180 },\n  stage_completed: { category: 'progression', severity: 'info', retention_days: 180 },\n  stage_reset: { category: 'progression', severity: 'warning', retention_days: 180 },\n  \n  // User interaction events\n  user_action: { category: 'interaction', severity: 'info', retention_days: 30 },\n  user_login: { category: 'interaction', severity: 'info', retention_days: 30 },\n  user_logout: { category: 'interaction', severity: 'info', retention_days: 30 },\n  \n  // Routine and habit events\n  routine_completed: { category: 'routine', severity: 'info', retention_days: 90 },\n  routine_skipped: { category: 'routine', severity: 'info', retention_days: 90 },\n  routine_created: { category: 'routine', severity: 'info', retention_days: 180 },\n  habit_streak_broken: { category: 'routine', severity: 'warning', retention_days: 90 },\n  habit_milestone: { category: 'routine', severity: 'info', retention_days: 365 },\n  \n  // Character progression events\n  level_up: { category: 'character', severity: 'info', retention_days: 365 },\n  achievement_earned: { category: 'character', severity: 'info', retention_days: 365 },\n  skill_improved: { category: 'character', severity: 'info', retention_days: 180 },\n  \n  // Error and system health events\n  error_occurred: { category: 'error', severity: 'error', retention_days: 90 },\n  warning_triggered: { category: 'warning', severity: 'warning', retention_days: 60 },\n  performance_issue: { category: 'performance', severity: 'warning', retention_days: 30 },\n  \n  // Integration and automation events\n  webhook_called: { category: 'integration', severity: 'debug', retention_days: 7 },\n  automation_triggered: { category: 'automation', severity: 'info', retention_days: 30 },\n  external_service_call: { category: 'integration', severity: 'debug', retention_days: 7 },\n  \n  // Business logic events\n  goal_achieved: { category: 'achievement', severity: 'info', retention_days: 365 },\n  milestone_reached: { category: 'achievement', severity: 'info', retention_days: 365 },\n  challenge_completed: { category: 'achievement', severity: 'info', retention_days: 180 },\n  \n  // Security and audit events\n  security_alert: { category: 'security', severity: 'critical', retention_days: 365 },\n  audit_event: { category: 'audit', severity: 'info', retention_days: 365 },\n  permission_change: { category: 'security', severity: 'warning', retention_days: 180 },\n  \n  // Default fallback\n  general_event: { category: 'general', severity: 'info', retention_days: 30 }\n};\n\n// Get event metadata or use defaults\nconst eventMeta = eventCategories[eventType] || eventCategories.general_event;\nconst finalLogLevel = logLevel !== 'info' ? logLevel : eventMeta.severity;\n\n// Enhanced event details processing\nconst processedDetails = {\n  ...eventDetails,\n  event_metadata: {\n    category: eventMeta.category,\n    severity: eventMeta.severity,\n    retention_days: eventMeta.retention_days,\n    log_level: finalLogLevel,\n    source: source,\n    correlation_id: correlationId,\n    session_id: sessionId\n  }\n};\n\n// Add contextual information based on event type\nif (eventType.includes('routine')) {\n  processedDetails.routine_context = {\n    routine_id: eventDetails.routine_id || null,\n    completion_time: eventDetails.completion_time || new Date().toISOString(),\n    streak_count: eventDetails.streak_count || null,\n    difficulty: eventDetails.difficulty || 'medium'\n  };\n}\n\nif (eventType.includes('level') || eventType.includes('achievement')) {\n  processedDetails.character_context = {\n    character_id: characterId,\n    old_level: eventDetails.old_level || null,\n    new_level: eventDetails.new_level || null,\n    xp_gained: eventDetails.xp_gained || null,\n    achievement_type: eventDetails.achievement_type || null\n  };\n}\n\nif (eventType.includes('error') || eventType.includes('warning')) {\n  processedDetails.error_context = {\n    error_code: eventDetails.error_code || null,\n    error_message: eventDetails.error_message || eventDetails.message || null,\n    stack_trace: eventDetails.stack_trace || null,\n    affected_component: eventDetails.component || null,\n    resolution_status: 'pending'\n  };\n}\n\n// Add tags for better searchability\nconst enhancedTags = [...tags];\nenhancedTags.push(eventMeta.category);\nenhancedTags.push(finalLogLevel);\nif (systemId) enhancedTags.push(`system:${systemId}`);\nif (characterId) enhancedTags.push(`character:${characterId}`);\nif (userId) enhancedTags.push(`user:${userId}`);\n\n// Generate unique log entry ID\nconst logEntryId = `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n\n// Build comprehensive log entry\nconst logEntry = {\n  id: logEntryId,\n  system_id: systemId,\n  character_id: characterId,\n  user_id: userId,\n  event_type: eventType,\n  log_level: finalLogLevel,\n  event_category: eventMeta.category,\n  event_details: processedDetails,\n  tags: enhancedTags,\n  source: source,\n  correlation_id: correlationId,\n  session_id: sessionId,\n  created_at: new Date().toISOString(),\n  retention_until: new Date(Date.now() + (eventMeta.retention_days * 24 * 60 * 60 * 1000)).toISOString()\n};\n\n// Determine if this event should trigger alerts\nconst shouldAlert = finalLogLevel === 'critical' || finalLogLevel === 'error' || eventType.includes('security');\nconst shouldIndex = eventMeta.category !== 'debug' && finalLogLevel !== 'debug';\nconst shouldArchive = eventMeta.retention_days > 90;\n\nreturn {\n  json: {\n    log_entry: logEntry,\n    processing_flags: {\n      should_alert: shouldAlert,\n      should_index: shouldIndex,\n      should_archive: shouldArchive,\n      priority_level: finalLogLevel === 'critical' ? 'high' : finalLogLevel === 'error' ? 'medium' : 'low'\n    }\n  }\n};"
+      },
+      "id": "process_log_data",
+      "name": "Process Log Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (\n  id,\n  system_id,\n  character_id,\n  user_id,\n  event_type,\n  log_level,\n  event_category,\n  event_details,\n  tags,\n  source,\n  correlation_id,\n  session_id,\n  created_at,\n  retention_until\n) VALUES (\n  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14\n) RETURNING id, event_type, log_level, created_at",
+        "additionalFields": {
+          "queryParameters": "={{ [\n  $json.log_entry.id,\n  $json.log_entry.system_id,\n  $json.log_entry.character_id,\n  $json.log_entry.user_id,\n  $json.log_entry.event_type,\n  $json.log_entry.log_level,\n  $json.log_entry.event_category,\n  JSON.stringify($json.log_entry.event_details),\n  JSON.stringify($json.log_entry.tags),\n  $json.log_entry.source,\n  $json.log_entry.correlation_id,\n  $json.log_entry.session_id,\n  $json.log_entry.created_at,\n  $json.log_entry.retention_until\n] }}"
+        }
+      },
+      "id": "insert_log_entry",
+      "name": "Insert Log Entry",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $('Process Log Data').item.json.processing_flags.should_alert }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check_should_alert",
+      "name": "Check Should Alert",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate alert for critical/error events\nconst logData = $('Process Log Data').item.json;\nconst logEntry = logData.log_entry;\nconst processingFlags = logData.processing_flags;\n\n// Create alert payload\nconst alertPayload = {\n  alert_type: 'system_log_alert',\n  severity: processingFlags.priority_level,\n  event_id: logEntry.id,\n  event_type: logEntry.event_type,\n  system_id: logEntry.system_id,\n  log_level: logEntry.log_level,\n  message: `${logEntry.event_type} occurred in system ${logEntry.system_id || 'unknown'}`,\n  details: {\n    event_category: logEntry.event_category,\n    source: logEntry.source,\n    correlation_id: logEntry.correlation_id,\n    tags: logEntry.tags,\n    timestamp: logEntry.created_at\n  },\n  requires_immediate_attention: logEntry.log_level === 'critical'\n};\n\n// Extract key error information if this is an error event\nif (logEntry.event_details.error_context) {\n  alertPayload.error_details = {\n    error_code: logEntry.event_details.error_context.error_code,\n    error_message: logEntry.event_details.error_context.error_message,\n    affected_component: logEntry.event_details.error_context.affected_component\n  };\n}\n\nreturn {\n  json: {\n    alert_generated: true,\n    alert_payload: alertPayload,\n    alert_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "generate_alert",
+      "name": "Generate Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $('Process Log Data').item.json.processing_flags.should_index }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check_should_index",
+      "name": "Check Should Index",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Index log entry for search and analytics\nconst logData = $('Process Log Data').item.json;\nconst logEntry = logData.log_entry;\n\n// Create search index entry\nconst searchIndexEntry = {\n  log_id: logEntry.id,\n  event_type: logEntry.event_type,\n  event_category: logEntry.event_category,\n  log_level: logEntry.log_level,\n  system_id: logEntry.system_id,\n  character_id: logEntry.character_id,\n  user_id: logEntry.user_id,\n  tags: logEntry.tags,\n  searchable_text: [\n    logEntry.event_type,\n    logEntry.event_category,\n    logEntry.source,\n    ...logEntry.tags,\n    JSON.stringify(logEntry.event_details)\n  ].join(' ').toLowerCase(),\n  indexed_at: new Date().toISOString(),\n  retention_until: logEntry.retention_until\n};\n\n// In a real implementation, this would:\n// - Send to Elasticsearch or similar search engine\n// - Update analytics dashboards\n// - Trigger data pipeline processing\n\nreturn {\n  json: {\n    indexed: true,\n    search_index_entry: searchIndexEntry,\n    indexing_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "index_log_entry",
+      "name": "Index Log Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all logging results\nconst logData = $('Process Log Data').item.json;\nconst insertResult = $('Insert Log Entry').item.json;\nconst alertResult = $('Generate Alert').all().length > 0 ? $('Generate Alert').item.json : null;\nconst indexResult = $('Index Log Entry').all().length > 0 ? $('Index Log Entry').item.json : null;\n\n// Build comprehensive response\nconst response = {\n  success: true,\n  log_entry_id: logData.log_entry.id,\n  event_type: logData.log_entry.event_type,\n  log_level: logData.log_entry.log_level,\n  event_category: logData.log_entry.event_category,\n  database_result: {\n    inserted: true,\n    log_id: insertResult.id,\n    created_at: insertResult.created_at\n  },\n  processing_summary: {\n    alert_generated: alertResult !== null,\n    indexed_for_search: indexResult !== null,\n    retention_days: logData.log_entry.event_details.event_metadata.retention_days,\n    priority_level: logData.processing_flags.priority_level\n  },\n  metadata: {\n    correlation_id: logData.log_entry.correlation_id,\n    session_id: logData.log_entry.session_id,\n    source: logData.log_entry.source,\n    tags: logData.log_entry.tags\n  }\n};\n\n// Add alert information if generated\nif (alertResult) {\n  response.alert_info = {\n    alert_generated: true,\n    severity: alertResult.alert_payload.severity,\n    requires_attention: alertResult.alert_payload.requires_immediate_attention\n  };\n}\n\n// Add indexing information if performed\nif (indexResult) {\n  response.indexing_info = {\n    indexed: true,\n    indexed_at: indexResult.indexing_timestamp,\n    searchable: true\n  };\n}\n\nreturn {\n  json: response\n};"
+      },
+      "id": "combine_results",
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "logging_response",
+      "name": "Logging Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1650,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "webhook_system_logs": {
+      "main": [
+        [
+          {
+            "node": "process_log_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process_log_data": {
+      "main": [
+        [
+          {
+            "node": "insert_log_entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "insert_log_entry": {
+      "main": [
+        [
+          {
+            "node": "check_should_alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_should_alert": {
+      "main": [
+        [
+          {
+            "node": "generate_alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "check_should_index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generate_alert": {
+      "main": [
+        [
+          {
+            "node": "check_should_index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_should_index": {
+      "main": [
+        [
+          {
+            "node": "index_log_entry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "combine_results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "index_log_entry": {
+      "main": [
+        [
+          {
+            "node": "combine_results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "combine_results": {
+      "main": [
+        [
+          {
+            "node": "logging_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {},
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-28T20:00:00.000Z",
+  "versionId": "1",
+  "active": true,
+  "meta": {},
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

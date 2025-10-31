@@ -1,0 +1,293 @@
+{
+  "name": "SUBFLOW: Trigger Achievement Check",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-achievement-check",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_achievement_trigger",
+      "name": "Webhook - Achievement Check",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-achievement-check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "character_id_check",
+              "leftValue": "={{ $json.body.character_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validate_character_id",
+      "name": "Validate Character ID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "character_id",
+              "name": "characterId",
+              "value": "={{ $json.body.character_id }}",
+              "type": "number"
+            },
+            {
+              "id": "trigger_reason",
+              "name": "triggerReason",
+              "value": "={{ $json.body.trigger_reason || 'System event' }}",
+              "type": "string"
+            },
+            {
+              "id": "event_data",
+              "name": "eventData",
+              "value": "={{ $json.body.event_data || {} }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_achievement_data",
+      "name": "Prepare Achievement Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        650,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/check-achievements",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $json.characterId }}"
+            },
+            {
+              "name": "trigger_reason",
+              "value": "={{ $json.triggerReason }}"
+            },
+            {
+              "name": "event_data",
+              "value": "={{ JSON.stringify($json.eventData) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_achievement_check",
+      "name": "Trigger Achievement Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        850,
+        250
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success_check",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check_achievement_response",
+      "name": "Check Achievement Response",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"message\": \"Achievement check triggered successfully\",\n  \"character_id\": $('Prepare Achievement Data').item.json.characterId,\n  \"trigger_reason\": $('Prepare Achievement Data').item.json.triggerReason,\n  \"achievement_response\": $json\n} }}",
+        "options": {}
+      },
+      "id": "send_success_response",
+      "name": "Send Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Achievement check failed\",\n  \"message\": $json.error || \"Failed to trigger achievement check\",\n  \"character_id\": $('Prepare Achievement Data').item.json.characterId\n} }}",
+        "options": {
+          "responseCode": "500"
+        }
+      },
+      "id": "send_achievement_error",
+      "name": "Send Achievement Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Invalid request\",\n  \"message\": \"Missing required parameter: character_id\"\n} }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "send_validation_error",
+      "name": "Send Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        650,
+        350
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Achievement Check": {
+      "main": [
+        [
+          {
+            "node": "Validate Character ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Character ID": {
+      "main": [
+        [
+          {
+            "node": "Prepare Achievement Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Achievement Data": {
+      "main": [
+        [
+          {
+            "node": "Trigger Achievement Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Achievement Check": {
+      "main": [
+        [
+          {
+            "node": "Check Achievement Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Achievement Response": {
+      "main": [
+        [
+          {
+            "node": "Send Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Achievement Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "tags": [],
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

@@ -1,0 +1,224 @@
+{
+  "name": "📊 Database Performance Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "db-performance-monitor",
+        "options": {}
+      },
+      "id": "16f1cf1a-bfe4-4b55-8c9d-522f78c69e5b",
+      "name": "Webhook - Performance Monitor",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        -48
+      ],
+      "webhookId": "db-performance-monitor"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Query Performance Analysis\nSELECT \n    query,\n    calls,\n    total_time,\n    mean_time,\n    stddev_time,\n    min_time,\n    max_time,\n    rows,\n    100.0 * shared_blks_hit / nullif(shared_blks_hit + shared_blks_read, 0) AS hit_percent,\n    shared_blks_read,\n    shared_blks_hit\nFROM pg_stat_statements \nWHERE calls > 10\nORDER BY total_time DESC \nLIMIT {{ $json.limit || 20 }};",
+        "options": {}
+      },
+      "id": "0bd4e7f0-4922-41b2-ad26-98d0eb5aae90",
+      "name": "Analyze Query Performance",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -128,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Table Performance Statistics\nSELECT \n  t.schemaname,\n  t.tablename,\n  pg_size_pretty(pg_total_relation_size(t.schemaname||'.'||t.tablename)) as total_size,\n  s.seq_scan,\n  s.idx_scan,\n  CASE \n    WHEN s.seq_scan + s.idx_scan > 0 \n    THEN round(100.0 * s.idx_scan / (s.seq_scan + s.idx_scan), 2)\n    ELSE 0\n  END as index_usage_ratio,\n  s.n_tup_ins + s.n_tup_upd + s.n_tup_del as total_modifications,\n  s.n_live_tup,\n  s.n_dead_tup,\n  CASE \n    WHEN s.n_live_tup > 0 \n    THEN round(100.0 * s.n_dead_tup / s.n_live_tup, 2)\n    ELSE 0\n  END as dead_tuple_ratio,\n  CASE \n    WHEN s.n_live_tup > 0 AND s.n_dead_tup > s.n_live_tup * 0.2 THEN 'NEEDS_VACUUM'\n    WHEN s.seq_scan > s.idx_scan * 2 AND s.seq_scan > 100 THEN 'NEEDS_INDEX'\n    ELSE 'OK'\n  END as performance_status\nFROM pg_tables t\nJOIN pg_stat_user_tables s ON t.tablename = s.relname AND t.schemaname = s.schemaname\nWHERE t.schemaname = 'public'\nORDER BY pg_total_relation_size(t.schemaname||'.'||t.tablename) DESC;",
+        "options": {}
+      },
+      "id": "c5c93818-5b0c-4afa-a9c9-da776212414b",
+      "name": "Analyze Table Performance",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -128,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and format performance monitoring results\nconst webhookData = $('Webhook - Performance Monitor').first().json;\nconst metricType = webhookData.metric_type || 'comprehensive';\n\nlet results = {\n  timestamp: new Date().toISOString(),\n  metric_type: metricType,\n  analysis_duration_ms: 0,\n  performance_summary: {},\n  detailed_metrics: {},\n  alerts: [],\n  recommendations: []\n};\n\nconst startTime = Date.now();\n\nif (metricType === 'query_performance') {\n  const queryStats = $input.all();\n  \n  // Analyze query performance\n  const slowQueries = queryStats.filter(q => q.mean_time > 1000); // > 1 second\n  const frequentQueries = queryStats.filter(q => q.calls > 1000);\n  \n  results.performance_summary = {\n    total_queries_analyzed: queryStats.length,\n    slow_queries_count: slowQueries.length,\n    frequent_queries_count: frequentQueries.length,\n    avg_hit_percent: queryStats.reduce((sum, q) => sum + (q.hit_percent || 0), 0) / queryStats.length\n  };\n  \n  results.detailed_metrics = {\n    top_time_consuming: queryStats.slice(0, 10),\n    slow_queries: slowQueries,\n    frequent_queries: frequentQueries.slice(0, 10)\n  };\n  \n  // Generate alerts\n  slowQueries.forEach(query => {\n    results.alerts.push({\n      severity: 'warning',\n      type: 'slow_query',\n      message: `Query with mean time ${Math.round(query.mean_time)}ms detected`,\n      query_preview: query.query.substring(0, 100) + '...',\n      recommendation: 'Consider optimizing this query or adding appropriate indexes'\n    });\n  });\n  \n} else if (metricType === 'table_stats') {\n  const tableStats = $input.all();\n  \n  const needsVacuum = tableStats.filter(t => t.performance_status === 'NEEDS_VACUUM');\n  const needsIndex = tableStats.filter(t => t.performance_status === 'NEEDS_INDEX');\n  \n  results.performance_summary = {\n    total_tables: tableStats.length,\n    tables_need_vacuum: needsVacuum.length,\n    tables_need_index: needsIndex.length,\n    avg_index_usage: Math.round(tableStats.reduce((sum, t) => sum + t.index_usage_ratio, 0) / tableStats.length)\n  };\n  \n  results.detailed_metrics = {\n    all_tables: tableStats,\n    performance_issues: {\n      needs_vacuum: needsVacuum,\n      needs_index: needsIndex\n    }\n  };\n  \n  // Generate alerts for table issues\n  needsVacuum.forEach(table => {\n    results.alerts.push({\n      severity: 'warning',\n      type: 'table_needs_vacuum',\n      message: `Table ${table.tablename} has ${table.dead_tuple_ratio}% dead tuples`,\n      recommendation: 'Schedule VACUUM operation for this table'\n    });\n  });\n}\n\nresults.analysis_duration_ms = Date.now() - startTime;\n\n// Add general recommendations\nif (results.alerts.length === 0) {\n  results.recommendations.push({\n    type: 'maintenance',\n    priority: 'low',\n    description: 'No performance issues detected',\n    action: 'Continue regular monitoring'\n  });\n} else {\n  results.recommendations.push({\n    type: 'performance',\n    priority: 'medium',\n    description: `${results.alerts.length} performance alerts detected`,\n    action: 'Review alerts and implement recommended optimizations'\n  });\n}\n\nreturn { json: results };"
+      },
+      "id": "47146a81-d6d5-4052-8046-dc39cd8baaa2",
+      "name": "Process Performance Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "44b84b9f-298a-46ba-9d6d-519daaccb232",
+      "name": "Return Performance Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.metric_type }}",
+                    "rightValue": "query_performance",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "03b8eae3-b766-40e2-bc06-76d268c936d4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Query"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "4296adee-a19f-49ae-8a54-04b7b1d67e60",
+                    "leftValue": "={{ $json.metric_type }}",
+                    "rightValue": "table_stats",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Stats"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -352,
+        -48
+      ],
+      "id": "041852de-c3a8-45df-bece-dc7ef5e32751",
+      "name": "Switch"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Performance Monitor": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Query Performance": {
+      "main": [
+        [
+          {
+            "node": "Process Performance Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Table Performance": {
+      "main": [
+        [
+          {
+            "node": "Process Performance Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Performance Data": {
+      "main": [
+        [
+          {
+            "node": "Return Performance Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Analyze Query Performance",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analyze Table Performance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "0fuC5jkvkZ25dcjN",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

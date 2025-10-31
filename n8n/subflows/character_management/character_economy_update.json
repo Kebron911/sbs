@@ -1,0 +1,242 @@
+{
+  "meta": {
+    "instanceId": "subflow-character-economy-update"
+  },
+  "name": "SUBFLOW: Character Economy Update",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "subflow-character-economy-update",
+        "options": {}
+      },
+      "id": "webhook_economy_update",
+      "name": "Webhook - Economy Update",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "subflow-character-economy-update"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Character Economy Update Engine\nconst data = $json;\nconst characterId = data.character_id;\nconst updateType = data.update_type || 'add'; // add, subtract, set\nconst updateData = data.updates || {};\n\n// Validate required fields\nif (!characterId) {\n  return {\n    json: {\n      success: false,\n      error: 'Missing required field: character_id',\n      statusCode: 400\n    }\n  };\n}\n\n// Supported economy fields\nconst supportedFields = ['xp', 'coins', 'hp', 'max_hp', 'level', 'total_xp'];\nconst updateFields = [];\nconst updateValues = [];\nlet paramIndex = 1;\n\n// Build dynamic update query\nObject.entries(updateData).forEach(([field, value]) => {\n  if (supportedFields.includes(field) && value !== null && value !== undefined) {\n    let updateExpression;\n    \n    switch (updateType) {\n      case 'add':\n        if (field === 'hp') {\n          // Special handling for HP to not exceed max_hp\n          updateExpression = `${field} = LEAST(${field} + $${paramIndex}, max_hp)`;\n        } else {\n          updateExpression = `${field} = ${field} + $${paramIndex}`;\n        }\n        break;\n      case 'subtract':\n        if (field === 'hp' || field === 'coins') {\n          // Prevent negative values for hp and coins\n          updateExpression = `${field} = GREATEST(${field} - $${paramIndex}, 0)`;\n        } else {\n          updateExpression = `${field} = ${field} - $${paramIndex}`;\n        }\n        break;\n      case 'set':\n        updateExpression = `${field} = $${paramIndex}`;\n        break;\n      default:\n        updateExpression = `${field} = ${field} + $${paramIndex}`;\n    }\n    \n    updateFields.push(updateExpression);\n    updateValues.push(Math.abs(Number(value))); // Ensure positive numbers\n    paramIndex++;\n  }\n});\n\n// Always update the timestamp\nupdateFields.push('updated_at = NOW()');\n\n// Add character_id for WHERE clause\nupdateValues.push(characterId);\n\nif (updateFields.length === 1) { // Only timestamp update\n  return {\n    json: {\n      success: false,\n      error: 'No valid update fields provided',\n      statusCode: 400,\n      supported_fields: supportedFields\n    }\n  };\n}\n\nconst query = `UPDATE characters SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING id, level, xp, total_xp, coins, hp, max_hp, updated_at`;\n\nreturn {\n  json: {\n    query: query,\n    parameters: updateValues,\n    character_id: characterId,\n    update_type: updateType,\n    fields_updated: Object.keys(updateData),\n    operation_summary: `${updateType} operation on character ${characterId}: ${Object.entries(updateData).map(([k, v]) => `${k}=${v}`).join(', ')}`\n  }\n};"
+      },
+      "id": "prepare_economy_update",
+      "name": "Prepare Economy Update",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "id": "has_valid_updates",
+              "name": "success",
+              "value": "={{ $json.success !== false }}"
+            }
+          ]
+        }
+      },
+      "id": "validate_update_data",
+      "name": "Validate Update Data",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/database-query",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "body",
+              "value": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": $json.query,\n  \"parameters\": $json.parameters,\n  \"return_first_only\": true\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "execute_economy_update",
+      "name": "Execute Economy Update",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        600,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "id": "update_successful",
+              "name": "success",
+              "value": "={{ $json.success === true }}"
+            }
+          ]
+        }
+      },
+      "id": "check_update_result",
+      "name": "Check Update Result",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        800,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate level progression if XP was updated\nconst updateResult = $('Execute Economy Update').item.json;\nconst updateData = $('Prepare Economy Update').item.json;\nconst characterData = updateResult.data;\n\n// Check if level progression occurred\nlet levelProgression = null;\nif (updateData.fields_updated.includes('xp') || updateData.fields_updated.includes('total_xp')) {\n  // Calculate level based on total_xp\n  const totalXp = characterData.total_xp || characterData.xp;\n  let calculatedLevel = 1;\n  let requiredXp = 0;\n  \n  while (requiredXp <= totalXp) {\n    const nextLevelCost = 100 + (calculatedLevel * 50);\n    if (requiredXp + nextLevelCost > totalXp) break;\n    requiredXp += nextLevelCost;\n    calculatedLevel++;\n  }\n  \n  const currentLevelXp = totalXp - requiredXp;\n  const nextLevelRequirement = 100 + (calculatedLevel * 50);\n  \n  levelProgression = {\n    calculated_level: calculatedLevel,\n    current_level_xp: currentLevelXp,\n    next_level_requirement: nextLevelRequirement,\n    progress_percentage: Math.round((currentLevelXp / nextLevelRequirement) * 100),\n    level_changed: calculatedLevel !== characterData.level\n  };\n}\n\n// Build comprehensive response\nconst response = {\n  success: true,\n  character_id: characterData.id,\n  update_type: updateData.update_type,\n  fields_updated: updateData.fields_updated,\n  character_data: {\n    level: characterData.level,\n    xp: characterData.xp,\n    total_xp: characterData.total_xp,\n    coins: characterData.coins,\n    hp: characterData.hp,\n    max_hp: characterData.max_hp,\n    updated_at: characterData.updated_at\n  },\n  operation_summary: updateData.operation_summary,\n  level_progression: levelProgression,\n  notifications: []\n};\n\n// Add notifications for significant changes\nif (updateData.fields_updated.includes('coins')) {\n  const coinsChange = updateData.updates ? updateData.updates.coins : 0;\n  if (coinsChange > 0) {\n    response.notifications.push({\n      type: 'coins_gained',\n      message: `You gained ${coinsChange} coins!`,\n      amount: coinsChange\n    });\n  }\n}\n\nif (updateData.fields_updated.includes('xp')) {\n  const xpChange = updateData.updates ? updateData.updates.xp : 0;\n  if (xpChange > 0) {\n    response.notifications.push({\n      type: 'xp_gained',\n      message: `You gained ${xpChange} XP!`,\n      amount: xpChange\n    });\n  }\n}\n\nif (levelProgression && levelProgression.level_changed) {\n  response.notifications.push({\n    type: 'level_up',\n    message: `Level up! You reached level ${levelProgression.calculated_level}!`,\n    new_level: levelProgression.calculated_level\n  });\n}\n\nreturn {\n  json: response\n};"
+      },
+      "id": "process_economy_result",
+      "name": "Process Economy Result",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        1000,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "send_economy_success",
+      "name": "Send Economy Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        1200,
+        -150
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Economy update failed\",\n  \"message\": $json.error || \"Database update operation failed\",\n  \"character_id\": $('Prepare Economy Update').item.json.character_id,\n  \"operation_summary\": $('Prepare Economy Update').item.json.operation_summary\n} }}",
+        "options": {}
+      },
+      "id": "send_economy_error",
+      "name": "Send Economy Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        1000,
+        -50
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "send_validation_error",
+      "name": "Send Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        600,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Economy Update": {
+      "main": [
+        [
+          {
+            "node": "Prepare Economy Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Economy Update": {
+      "main": [
+        [
+          {
+            "node": "Validate Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Update Data": {
+      "main": [
+        [
+          {
+            "node": "Execute Economy Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Economy Update": {
+      "main": [
+        [
+          {
+            "node": "Check Update Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Update Result": {
+      "main": [
+        [
+          {
+            "node": "Process Economy Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Economy Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Economy Result": {
+      "main": [
+        [
+          {
+            "node": "Send Economy Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": true,
+  "versionId": "1",
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

@@ -1,0 +1,211 @@
+{
+  "name": "Level XP Calculator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-level-calculator",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_level_calculator",
+      "name": "Webhook - Level Calculator",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-level-calculator"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Level/XP Calculation Engine\nconst requestData = $json;\nconst calculationType = requestData.calculation_type || 'standard'; // standard, exponential, custom\nconst currentXP = requestData.current_xp || 0;\nconst currentLevel = requestData.current_level || 1;\nconst totalXP = requestData.total_xp || currentXP;\nconst xpToAdd = requestData.xp_to_add || 0;\nconst levelingSystem = requestData.leveling_system || 'linear';\nconst customFormula = requestData.custom_formula || null;\nconst maxLevel = requestData.max_level || 100;\nconst prestigeLevel = requestData.prestige_level || 0;\n\n// Different leveling systems\nconst levelingSystems = {\n  // Linear: Each level requires same base XP + increment\n  linear: {\n    baseXP: 100,\n    increment: 50,\n    formula: (level) => 100 + (level * 50)\n  },\n  \n  // Exponential: XP requirement grows exponentially\n  exponential: {\n    baseXP: 100,\n    multiplier: 1.5,\n    formula: (level) => Math.floor(100 * Math.pow(1.5, level - 1))\n  },\n  \n  // Logarithmic: XP requirement grows more slowly at higher levels\n  logarithmic: {\n    baseXP: 100,\n    factor: 25,\n    formula: (level) => Math.floor(100 + (25 * level * Math.log(level + 1)))\n  },\n  \n  // Gaming standard: Popular in RPGs\n  gaming_standard: {\n    baseXP: 100,\n    factor: 1.2,\n    formula: (level) => Math.floor(100 * Math.pow(level, 1.2))\n  },\n  \n  // SBS optimized: Balanced for skill/habit progression\n  sbs_optimized: {\n    baseXP: 100,\n    increment: 25,\n    formula: (level) => {\n      if (level <= 10) return 100 + (level * 25); // Early levels easier\n      if (level <= 50) return 350 + ((level - 10) * 50); // Mid levels moderate\n      return 2350 + ((level - 50) * 100); // High levels harder\n    }\n  }\n};\n\n// Get leveling system configuration\nconst systemConfig = levelingSystems[levelingSystem] || levelingSystems.linear;\n\n// Calculate level from total XP\nfunction calculateLevelFromXP(totalXP, systemConfig, maxLevel = 100) {\n  let level = 1;\n  let xpRequired = 0;\n  let xpForCurrentLevel = 0;\n  \n  while (level <= maxLevel) {\n    const xpForThisLevel = systemConfig.formula(level);\n    \n    if (xpRequired + xpForThisLevel > totalXP) {\n      break;\n    }\n    \n    xpRequired += xpForThisLevel;\n    xpForCurrentLevel = totalXP - xpRequired;\n    level++;\n  }\n  \n  const xpForNextLevel = level <= maxLevel ? systemConfig.formula(level) : 0;\n  const xpStillNeeded = level <= maxLevel ? xpForNextLevel - xpForCurrentLevel : 0;\n  const progressPercent = level <= maxLevel ? Math.round((xpForCurrentLevel / xpForNextLevel) * 100) : 100;\n  \n  return {\n    level: level - 1,\n    current_level_xp: xpForCurrentLevel,\n    xp_for_next_level: xpForNextLevel,\n    xp_still_needed: xpStillNeeded,\n    total_xp_at_level_start: xpRequired - (level > 1 ? systemConfig.formula(level - 1) : 0),\n    progress_percent: progressPercent,\n    is_max_level: level - 1 >= maxLevel\n  };\n}\n\n// Calculate XP required for specific level\nfunction calculateXPForLevel(targetLevel, systemConfig) {\n  let totalXPRequired = 0;\n  \n  for (let level = 1; level <= targetLevel; level++) {\n    totalXPRequired += systemConfig.formula(level);\n  }\n  \n  return totalXPRequired;\n}\n\n// Main calculation based on type\nlet result = {};\n\nif (calculationType === 'level_from_xp') {\n  // Calculate level from total XP\n  result = calculateLevelFromXP(totalXP, systemConfig, maxLevel);\n  result.calculation_type = 'level_from_xp';\n  result.input_total_xp = totalXP;\n  \n} else if (calculationType === 'xp_for_level') {\n  // Calculate XP required for specific level\n  const targetLevel = requestData.target_level || currentLevel + 1;\n  const xpRequired = calculateXPForLevel(targetLevel, systemConfig);\n  \n  result = {\n    calculation_type: 'xp_for_level',\n    target_level: targetLevel,\n    total_xp_required: xpRequired,\n    current_total_xp: totalXP,\n    xp_still_needed: Math.max(0, xpRequired - totalXP),\n    can_level_up: totalXP >= xpRequired\n  };\n  \n} else if (calculationType === 'add_xp') {\n  // Add XP and calculate new level\n  const newTotalXP = totalXP + xpToAdd;\n  const beforeLevel = calculateLevelFromXP(totalXP, systemConfig, maxLevel);\n  const afterLevel = calculateLevelFromXP(newTotalXP, systemConfig, maxLevel);\n  \n  result = {\n    calculation_type: 'add_xp',\n    xp_added: xpToAdd,\n    before: {\n      level: beforeLevel.level,\n      total_xp: totalXP,\n      current_level_xp: beforeLevel.current_level_xp,\n      progress_percent: beforeLevel.progress_percent\n    },\n    after: {\n      level: afterLevel.level,\n      total_xp: newTotalXP,\n      current_level_xp: afterLevel.current_level_xp,\n      progress_percent: afterLevel.progress_percent,\n      xp_for_next_level: afterLevel.xp_for_next_level,\n      xp_still_needed: afterLevel.xp_still_needed\n    },\n    level_up_occurred: afterLevel.level > beforeLevel.level,\n    levels_gained: afterLevel.level - beforeLevel.level\n  };\n  \n} else if (calculationType === 'level_rewards') {\n  // Calculate rewards for reaching a level\n  const targetLevel = requestData.target_level || currentLevel;\n  const baseReward = requestData.base_reward || { coins: 50, hp: 10 };\n  \n  // Level-based reward multipliers\n  const rewardMultiplier = 1 + (targetLevel * 0.1) + (prestigeLevel * 0.05);\n  \n  result = {\n    calculation_type: 'level_rewards',\n    level: targetLevel,\n    prestige_level: prestigeLevel,\n    rewards: {\n      coins: Math.floor(baseReward.coins * rewardMultiplier),\n      hp_increase: Math.floor((baseReward.hp || 10) * rewardMultiplier),\n      skill_points: Math.floor(targetLevel / 5) + 1, // 1 skill point per 5 levels\n      bonus_multiplier: rewardMultiplier\n    },\n    milestone_rewards: []\n  };\n  \n  // Add milestone rewards\n  if (targetLevel % 10 === 0) {\n    result.milestone_rewards.push({\n      type: 'level_milestone',\n      level: targetLevel,\n      bonus_coins: Math.floor(targetLevel * 10),\n      special_item: `Level ${targetLevel} Achievement Badge`\n    });\n  }\n  \n  if (targetLevel === 25 || targetLevel === 50 || targetLevel === 75 || targetLevel === 100) {\n    result.milestone_rewards.push({\n      type: 'major_milestone',\n      level: targetLevel,\n      prestige_points: Math.floor(targetLevel / 25),\n      title_unlock: `${targetLevel === 25 ? 'Apprentice' : targetLevel === 50 ? 'Expert' : targetLevel === 75 ? 'Master' : 'Grandmaster'} of Systems`\n    });\n  }\n}\n\n// Add system metadata\nresult.leveling_system = levelingSystem;\nresult.system_config = {\n  name: levelingSystem,\n  max_level: maxLevel,\n  prestige_enabled: prestigeLevel > 0\n};\nresult.calculation_metadata = {\n  calculated_at: new Date().toISOString(),\n  prestige_level: prestigeLevel,\n  max_level: maxLevel\n};\n\n// Add leveling curve preview (next 5 levels)\nif (calculationType === 'level_from_xp' || calculationType === 'add_xp') {\n  const currentCalcLevel = result.level || result.after?.level || 1;\n  const levelingCurve = [];\n  \n  for (let i = 1; i <= 5; i++) {\n    const previewLevel = currentCalcLevel + i;\n    if (previewLevel <= maxLevel) {\n      const xpForLevel = systemConfig.formula(previewLevel);\n      levelingCurve.push({\n        level: previewLevel,\n        xp_required: xpForLevel,\n        total_xp_needed: calculateXPForLevel(previewLevel, systemConfig)\n      });\n    }\n  }\n  \n  result.leveling_curve_preview = levelingCurve;\n}\n\nreturn {\n  json: {\n    success: true,\n    ...result\n  }\n};"
+      },
+      "id": "calculate_level_xp",
+      "name": "Calculate Level XP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.calculation_type }}",
+              "operation": "equal",
+              "value2": "add_xp"
+            }
+          ]
+        }
+      },
+      "id": "check_level_up",
+      "name": "Check Level Up Occurred",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.level_up_occurred }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check_actual_level_up",
+      "name": "Check Actual Level Up",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate level up notifications and achievements\nconst levelData = $('Calculate Level XP').item.json;\nconst levelsGained = levelData.levels_gained;\nconst newLevel = levelData.after.level;\nconst oldLevel = levelData.before.level;\n\n// Generate level up notifications\nconst notifications = [];\n\n// Basic level up notification\nnotifications.push({\n  type: 'level_up',\n  title: `Level Up! You reached level ${newLevel}!`,\n  message: `Congratulations! You've advanced from level ${oldLevel} to level ${newLevel}.`,\n  level: newLevel,\n  levels_gained: levelsGained,\n  priority: 'high'\n});\n\n// Multiple level ups\nif (levelsGained > 1) {\n  notifications.push({\n    type: 'multi_level_up',\n    title: `Amazing! ${levelsGained} Levels Gained!`,\n    message: `You've gained ${levelsGained} levels in one go! Incredible progress!`,\n    levels_gained: levelsGained,\n    priority: 'epic'\n  });\n}\n\n// Milestone notifications\nif (newLevel % 10 === 0) {\n  notifications.push({\n    type: 'milestone_reached',\n    title: `Milestone Reached: Level ${newLevel}!`,\n    message: `You've reached a major milestone! Level ${newLevel} is a significant achievement.`,\n    milestone_level: newLevel,\n    priority: 'epic'\n  });\n}\n\n// Achievement unlocks based on level\nconst achievements = [];\n\nif (newLevel === 5) {\n  achievements.push({\n    title: 'Getting Started',\n    description: 'Reached level 5 - You\\'re on your way!',\n    type: 'level_achievement',\n    rarity: 'common'\n  });\n}\n\nif (newLevel === 10) {\n  achievements.push({\n    title: 'Double Digits',\n    description: 'Reached level 10 - Now we\\'re talking!',\n    type: 'level_achievement',\n    rarity: 'uncommon'\n  });\n}\n\nif (newLevel === 25) {\n  achievements.push({\n    title: 'Quarter Century',\n    description: 'Reached level 25 - You\\'re becoming an expert!',\n    type: 'level_achievement',\n    rarity: 'rare'\n  });\n}\n\nif (newLevel === 50) {\n  achievements.push({\n    title: 'Half Century',\n    description: 'Reached level 50 - Mastery is within reach!',\n    type: 'level_achievement',\n    rarity: 'epic'\n  });\n}\n\nif (newLevel >= 100) {\n  achievements.push({\n    title: 'Centurion',\n    description: 'Reached level 100 - You are a true master!',\n    type: 'level_achievement',\n    rarity: 'legendary'\n  });\n}\n\n// Check for speed achievements (multiple levels in short time)\nif (levelsGained >= 3) {\n  achievements.push({\n    title: 'Rapid Growth',\n    description: `Gained ${levelsGained} levels at once - Exceptional progress!`,\n    type: 'speed_achievement',\n    rarity: levelsGained >= 5 ? 'legendary' : 'epic'\n  });\n}\n\nreturn {\n  json: {\n    success: true,\n    level_up_data: levelData,\n    notifications: notifications,\n    achievements: achievements,\n    celebration_level: levelsGained >= 3 ? 'epic' : levelsGained >= 2 ? 'major' : 'standard'\n  }\n};"
+      },
+      "id": "generate_level_up_rewards",
+      "name": "Generate Level Up Rewards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine calculation results with level up rewards\nconst calculationResult = $('Calculate Level XP').item.json;\nconst levelUpRewards = $('Generate Level Up Rewards').all().length > 0 ? $('Generate Level Up Rewards').item.json : null;\n\n// Build comprehensive response\nconst response = {\n  success: true,\n  calculation_result: calculationResult,\n  level_up_occurred: calculationResult.level_up_occurred || false\n};\n\n// Add level up rewards and notifications if they occurred\nif (levelUpRewards) {\n  response.level_up_rewards = {\n    notifications: levelUpRewards.notifications,\n    achievements: levelUpRewards.achievements,\n    celebration_level: levelUpRewards.celebration_level\n  };\n}\n\n// Add quick reference data for common use cases\nresponse.quick_reference = {\n  current_level: calculationResult.level || calculationResult.after?.level || calculationResult.target_level,\n  total_xp: calculationResult.input_total_xp || calculationResult.after?.total_xp || calculationResult.current_total_xp,\n  leveling_system: calculationResult.leveling_system,\n  calculation_type: calculationResult.calculation_type\n};\n\n// Add next level preview for UI\nif (calculationResult.leveling_curve_preview && calculationResult.leveling_curve_preview.length > 0) {\n  response.next_level_preview = calculationResult.leveling_curve_preview[0];\n}\n\nreturn {\n  json: response\n};"
+      },
+      "id": "combine_results",
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "calculation_response",
+      "name": "Calculation Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1450,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "webhook_level_calculator": {
+      "main": [
+        [
+          {
+            "node": "calculate_level_xp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_level_xp": {
+      "main": [
+        [
+          {
+            "node": "check_level_up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_level_up": {
+      "main": [
+        [
+          {
+            "node": "check_actual_level_up",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "combine_results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_actual_level_up": {
+      "main": [
+        [
+          {
+            "node": "generate_level_up_rewards",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "combine_results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generate_level_up_rewards": {
+      "main": [
+        [
+          {
+            "node": "combine_results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "combine_results": {
+      "main": [
+        [
+          {
+            "node": "calculation_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {},
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-28T20:00:00.000Z",
+  "versionId": "1",
+  "active": true,
+  "meta": {},
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

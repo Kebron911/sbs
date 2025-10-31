@@ -1,0 +1,492 @@
+{
+  "name": "📈 Database Analytics & Reporting",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "db-analytics-reporter",
+        "options": {}
+      },
+      "id": "a1b2c3d4-5e6f-7890-1234-56789abcdef0",
+      "name": "Webhook - Analytics Reporter",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        400
+      ],
+      "webhookId": "db-analytics-reporter"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.report_type }}",
+                    "rightValue": "user_engagement",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_1"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "UserEngagement"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.report_type }}",
+                    "rightValue": "sbs_analytics",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SBSAnalytics"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.report_type }}",
+                    "rightValue": "game_economy",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_3"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "GameEconomy"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.report_type }}",
+                    "rightValue": "content_performance",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ContentPerformance"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.report_type }}",
+                    "rightValue": "growth_metrics",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_5"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "GrowthMetrics"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.report_type }}",
+                    "rightValue": "comprehensive",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_6"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Comprehensive"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-6f7a-8901-2345-6789abcdef01",
+      "name": "Route Report Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        440,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- User Engagement Analytics\nWITH user_activity AS (\n  SELECT \n    u.id as user_id,\n    u.username,\n    u.join_date,\n    c.id as character_id,\n    c.level,\n    c.xp,\n    c.coins,\n    c.prestige_level,\n    COUNT(DISTINCT DATE(sl.created_at)) as active_days_30,\n    COUNT(sl.id) as total_events_30,\n    MAX(sl.created_at) as last_activity\n  FROM users u\n  LEFT JOIN characters c ON u.id = c.user_id\n  LEFT JOIN system_logs sl ON u.id = sl.user_id \n    AND sl.created_at >= now() - interval '30 days'\n  GROUP BY u.id, u.username, u.join_date, c.id, c.level, c.xp, c.coins, c.prestige_level\n),\nlogin_patterns AS (\n  SELECT \n    user_id,\n    COUNT(*) as login_count_7d,\n    AVG(EXTRACT(hour FROM created_at)) as avg_login_hour,\n    MODE() WITHIN GROUP (ORDER BY EXTRACT(dow FROM created_at)) as most_active_day\n  FROM system_logs \n  WHERE event_type = 'user_login' \n    AND created_at >= now() - interval '7 days'\n  GROUP BY user_id\n),\nengagement_metrics AS (\n  SELECT \n    COUNT(*) as total_users,\n    COUNT(CASE WHEN last_activity >= now() - interval '7 days' THEN 1 END) as active_users_7d,\n    COUNT(CASE WHEN last_activity >= now() - interval '30 days' THEN 1 END) as active_users_30d,\n    AVG(active_days_30) as avg_active_days,\n    AVG(total_events_30) as avg_events_per_user,\n    COUNT(CASE WHEN join_date >= now() - interval '7 days' THEN 1 END) as new_users_7d,\n    COUNT(CASE WHEN join_date >= now() - interval '30 days' THEN 1 END) as new_users_30d\n  FROM user_activity\n),\ntop_users AS (\n  SELECT \n    username,\n    level,\n    xp,\n    coins,\n    prestige_level,\n    active_days_30,\n    total_events_30,\n    last_activity\n  FROM user_activity\n  WHERE last_activity >= now() - interval '30 days'\n  ORDER BY xp DESC, level DESC\n  LIMIT 10\n)\nSELECT \n  'user_engagement' as report_type,\n  json_build_object(\n    'engagement_summary', (\n      SELECT row_to_json(em) FROM engagement_metrics em\n    ),\n    'login_patterns', (\n      SELECT json_agg(row_to_json(lp)) FROM login_patterns lp\n    ),\n    'top_active_users', (\n      SELECT json_agg(row_to_json(tu)) FROM top_users tu\n    ),\n    'user_distribution', (\n      SELECT json_build_object(\n        'by_level', (\n          SELECT json_agg(json_build_object('level_range', level_range, 'user_count', user_count))\n          FROM (\n            SELECT \n              CASE \n                WHEN level BETWEEN 0 AND 10 THEN '0-10'\n                WHEN level BETWEEN 11 AND 25 THEN '11-25'\n                WHEN level BETWEEN 26 AND 50 THEN '26-50'\n                WHEN level BETWEEN 51 AND 100 THEN '51-100'\n                ELSE '100+'\n              END as level_range,\n              COUNT(*) as user_count\n            FROM user_activity\n            WHERE character_id IS NOT NULL\n            GROUP BY level_range\n            ORDER BY MIN(level)\n          ) level_dist\n        ),\n        'by_prestige', (\n          SELECT json_agg(json_build_object('prestige_level', prestige_level, 'user_count', user_count))\n          FROM (\n            SELECT \n              COALESCE(prestige_level, 0) as prestige_level,\n              COUNT(*) as user_count\n            FROM user_activity\n            WHERE character_id IS NOT NULL\n            GROUP BY prestige_level\n            ORDER BY prestige_level\n          ) prestige_dist\n        )\n      )\n    ),\n    'analysis_timestamp', now()\n  ) as analytics_data;",
+        "options": {}
+      },
+      "id": "c3d4e5f6-7a8b-9012-3456-789abcdef012",
+      "name": "Generate User Engagement Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- SBS System Analytics\nWITH system_stats AS (\n  SELECT \n    COUNT(*) as total_systems,\n    COUNT(CASE WHEN current_stage = 'define' THEN 1 END) as systems_define,\n    COUNT(CASE WHEN current_stage = 'design' THEN 1 END) as systems_design,\n    COUNT(CASE WHEN current_stage = 'build' THEN 1 END) as systems_build,\n    COUNT(CASE WHEN current_stage = 'automate' THEN 1 END) as systems_automate,\n    COUNT(CASE WHEN current_stage = 'review' THEN 1 END) as systems_review,\n    COUNT(DISTINCT owner_id) as unique_system_owners,\n    AVG(EXTRACT(days FROM (now() - created_at))) as avg_system_age_days\n  FROM systems\n),\ncategory_analysis AS (\n  SELECT \n    category,\n    COUNT(*) as system_count,\n    COUNT(CASE WHEN current_stage IN ('automate', 'review') THEN 1 END) as advanced_systems,\n    AVG(EXTRACT(days FROM (now() - created_at))) as avg_age_days\n  FROM systems\n  WHERE category IS NOT NULL\n  GROUP BY category\n  ORDER BY system_count DESC\n),\nroutine_performance AS (\n  SELECT \n    COUNT(*) as total_routines,\n    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_routines,\n    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_routines,\n    COUNT(DISTINCT system_id) as systems_with_routines,\n    AVG(EXTRACT(days FROM (now() - created_at))) as avg_routine_age_days\n  FROM routines\n),\nroutine_completions AS (\n  SELECT \n    COUNT(*) as total_completions,\n    COUNT(CASE WHEN completed_at >= now() - interval '7 days' THEN 1 END) as completions_7d,\n    COUNT(CASE WHEN completed_at >= now() - interval '30 days' THEN 1 END) as completions_30d,\n    COUNT(DISTINCT routine_id) as unique_routines_completed,\n    AVG(xp_earned) as avg_xp_per_completion,\n    AVG(coins_earned) as avg_coins_per_completion\n  FROM routine_completions\n),\nsystem_progression AS (\n  SELECT \n    system_id,\n    s.name as system_name,\n    s.category,\n    s.current_stage,\n    COUNT(ss.id) as completed_steps,\n    COUNT(CASE WHEN ss.status = 'complete' THEN 1 END) as successful_steps,\n    MAX(ss.completed_at) as last_step_completion\n  FROM systems s\n  LEFT JOIN system_steps ss ON s.id = ss.system_id\n  GROUP BY system_id, s.name, s.category, s.current_stage\n  HAVING COUNT(ss.id) > 0\n  ORDER BY completed_steps DESC, last_step_completion DESC\n  LIMIT 10\n)\nSELECT \n  'sbs_analytics' as report_type,\n  json_build_object(\n    'system_overview', (\n      SELECT row_to_json(ss) FROM system_stats ss\n    ),\n    'category_breakdown', (\n      SELECT json_agg(row_to_json(ca)) FROM category_analysis ca\n    ),\n    'routine_metrics', (\n      SELECT row_to_json(rp) FROM routine_performance rp\n    ),\n    'completion_metrics', (\n      SELECT row_to_json(rc) FROM routine_completions rc\n    ),\n    'top_progressing_systems', (\n      SELECT json_agg(row_to_json(sp)) FROM system_progression sp\n    ),\n    'stage_distribution', (\n      SELECT json_build_object(\n        'define_percent', ROUND((systems_define::numeric / NULLIF(total_systems, 0)) * 100, 2),\n        'design_percent', ROUND((systems_design::numeric / NULLIF(total_systems, 0)) * 100, 2),\n        'build_percent', ROUND((systems_build::numeric / NULLIF(total_systems, 0)) * 100, 2),\n        'automate_percent', ROUND((systems_automate::numeric / NULLIF(total_systems, 0)) * 100, 2),\n        'review_percent', ROUND((systems_review::numeric / NULLIF(total_systems, 0)) * 100, 2)\n      ) FROM system_stats\n    ),\n    'analysis_timestamp', now()\n  ) as analytics_data;",
+        "options": {}
+      },
+      "id": "d4e5f6g7-8b9c-0123-4567-89abcdef0123",
+      "name": "Generate SBS Analytics Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Game Economy Analytics\nWITH economy_overview AS (\n  SELECT \n    SUM(xp) as total_xp_in_system,\n    SUM(coins) as total_coins_in_system,\n    AVG(xp) as avg_xp_per_character,\n    AVG(coins) as avg_coins_per_character,\n    COUNT(*) as total_characters,\n    MAX(xp) as highest_xp,\n    MAX(coins) as highest_coins,\n    COUNT(CASE WHEN prestige_level > 0 THEN 1 END) as prestiged_characters\n  FROM characters\n),\ntransaction_analysis AS (\n  SELECT \n    type,\n    COUNT(*) as transaction_count,\n    SUM(amount) as total_amount,\n    AVG(amount) as avg_amount,\n    MAX(trans_date) as last_transaction\n  FROM transactions\n  WHERE trans_date >= now() - interval '30 days'\n  GROUP BY type\n  ORDER BY total_amount DESC\n),\nitem_economy AS (\n  SELECT \n    i.name,\n    i.type,\n    i.cost,\n    COUNT(inv.id) as total_owned,\n    COUNT(DISTINCT inv.character_id) as unique_owners,\n    SUM(inv.quantity) as total_quantity,\n    COUNT(t.id) as purchase_count,\n    SUM(t.amount) as total_revenue\n  FROM items i\n  LEFT JOIN inventory inv ON i.id = inv.item_id\n  LEFT JOIN transactions t ON i.id = t.item_id \n    AND t.type = 'purchase' \n    AND t.trans_date >= now() - interval '30 days'\n  GROUP BY i.id, i.name, i.type, i.cost\n  ORDER BY total_revenue DESC NULLS LAST\n  LIMIT 15\n),\nxp_distribution AS (\n  SELECT \n    CASE \n      WHEN xp BETWEEN 0 AND 1000 THEN '0-1K'\n      WHEN xp BETWEEN 1001 AND 5000 THEN '1K-5K'\n      WHEN xp BETWEEN 5001 AND 10000 THEN '5K-10K'\n      WHEN xp BETWEEN 10001 AND 25000 THEN '10K-25K'\n      WHEN xp BETWEEN 25001 AND 50000 THEN '25K-50K'\n      ELSE '50K+'\n    END as xp_range,\n    COUNT(*) as character_count,\n    AVG(coins) as avg_coins_in_range\n  FROM characters\n  GROUP BY xp_range\n  ORDER BY MIN(xp)\n),\neconomy_velocity AS (\n  SELECT \n    DATE(trans_date) as transaction_date,\n    COUNT(*) as daily_transactions,\n    SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as daily_income,\n    SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as daily_spending\n  FROM transactions\n  WHERE trans_date >= now() - interval '14 days'\n  GROUP BY DATE(trans_date)\n  ORDER BY transaction_date DESC\n  LIMIT 14\n)\nSELECT \n  'game_economy' as report_type,\n  json_build_object(\n    'economy_summary', (\n      SELECT row_to_json(eo) FROM economy_overview eo\n    ),\n    'transaction_breakdown', (\n      SELECT json_agg(row_to_json(ta)) FROM transaction_analysis ta\n    ),\n    'item_performance', (\n      SELECT json_agg(row_to_json(ie)) FROM item_economy ie\n    ),\n    'xp_distribution', (\n      SELECT json_agg(row_to_json(xd)) FROM xp_distribution xd\n    ),\n    'economy_velocity', (\n      SELECT json_agg(row_to_json(ev)) FROM economy_velocity ev\n    ),\n    'economy_health_indicators', (\n      SELECT json_build_object(\n        'xp_inflation_risk', CASE \n          WHEN AVG(xp) > 50000 THEN 'high'\n          WHEN AVG(xp) > 25000 THEN 'medium'\n          ELSE 'low'\n        END,\n        'coin_distribution_gini', (\n          SELECT ROUND(\n            (SUM((2 * row_number() OVER (ORDER BY coins) - COUNT(*) - 1) * coins) / \n             (COUNT(*) * SUM(coins)))::numeric, 3\n          )\n          FROM characters WHERE coins > 0\n        ),\n        'prestige_adoption_rate', ROUND(\n          (COUNT(CASE WHEN prestige_level > 0 THEN 1 END)::numeric / COUNT(*)) * 100, 2\n        )\n      ) FROM characters\n    ),\n    'analysis_timestamp', now()\n  ) as analytics_data;",
+        "options": {}
+      },
+      "id": "e5f6g7h8-9c0d-1234-5678-9abcdef01234",
+      "name": "Generate Game Economy Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Content Performance Analytics\nWITH mission_performance AS (\n  SELECT \n    type,\n    COUNT(*) as total_missions,\n    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_missions,\n    COUNT(CASE WHEN status = 'active' THEN 1 END) as active_missions,\n    COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_missions,\n    AVG(xp_reward) as avg_xp_reward,\n    AVG(coin_reward) as avg_coin_reward,\n    ROUND(\n      (COUNT(CASE WHEN status = 'completed' THEN 1 END)::numeric / NULLIF(COUNT(*), 0)) * 100, 2\n    ) as completion_rate\n  FROM missions\n  GROUP BY type\n  ORDER BY completion_rate DESC\n),\nachievement_stats AS (\n  SELECT \n    COUNT(*) as total_achievements,\n    COUNT(CASE WHEN unlocked_by IS NOT NULL THEN 1 END) as unlocked_achievements,\n    COUNT(DISTINCT unlocked_by) as unique_achievers,\n    AVG(xp_reward) as avg_achievement_xp,\n    AVG(coin_reward) as avg_achievement_coins,\n    ROUND(\n      (COUNT(CASE WHEN unlocked_by IS NOT NULL THEN 1 END)::numeric / NULLIF(COUNT(*), 0)) * 100, 2\n    ) as unlock_rate\n  FROM achievements\n),\nhabit_effectiveness AS (\n  SELECT \n    type,\n    COUNT(*) as total_habits,\n    AVG(streak) as avg_streak,\n    MAX(streak) as max_streak,\n    COUNT(CASE WHEN last_completed >= now() - interval '7 days' THEN 1 END) as recently_active,\n    AVG(xp_value) as avg_xp_value,\n    COUNT(CASE WHEN streak >= 7 THEN 1 END) as habits_week_streak,\n    COUNT(CASE WHEN streak >= 30 THEN 1 END) as habits_month_streak\n  FROM habits\n  GROUP BY type\n),\nevent_engagement AS (\n  SELECT \n    event_type,\n    COUNT(*) as event_count,\n    COUNT(DISTINCT character_id) as unique_participants,\n    DATE_TRUNC('day', MAX(event_date)) as last_occurrence,\n    DATE_TRUNC('day', MIN(event_date)) as first_occurrence\n  FROM events\n  WHERE event_date >= now() - interval '30 days'\n  GROUP BY event_type\n  ORDER BY event_count DESC\n  LIMIT 10\n),\njournal_activity AS (\n  SELECT \n    COUNT(*) as total_entries,\n    COUNT(DISTINCT character_id) as active_journalers,\n    AVG(LENGTH(content)) as avg_entry_length,\n    COUNT(CASE WHEN created_at >= now() - interval '7 days' THEN 1 END) as entries_last_7d,\n    COUNT(CASE WHEN created_at >= now() - interval '30 days' THEN 1 END) as entries_last_30d\n  FROM journal\n),\ncontent_trends AS (\n  SELECT \n    DATE(created_at) as content_date,\n    COUNT(CASE WHEN 'missions' = 'missions' THEN m.id END) as daily_missions_created,\n    COUNT(CASE WHEN 'habits' = 'habits' THEN h.id END) as daily_habits_created,\n    COUNT(CASE WHEN 'events' = 'events' THEN e.id END) as daily_events_created\n  FROM (\n    SELECT created_at, 'missions' as content_type, id FROM missions WHERE created_at >= now() - interval '14 days'\n    UNION ALL\n    SELECT created_at, 'habits' as content_type, id FROM habits WHERE created_at >= now() - interval '14 days'\n    UNION ALL\n    SELECT event_date as created_at, 'events' as content_type, id FROM events WHERE event_date >= now() - interval '14 days'\n  ) content_union\n  LEFT JOIN missions m ON content_union.content_type = 'missions' AND content_union.id = m.id\n  LEFT JOIN habits h ON content_union.content_type = 'habits' AND content_union.id = h.id\n  LEFT JOIN events e ON content_union.content_type = 'events' AND content_union.id = e.id\n  GROUP BY DATE(created_at)\n  ORDER BY content_date DESC\n  LIMIT 14\n)\nSELECT \n  'content_performance' as report_type,\n  json_build_object(\n    'mission_analytics', (\n      SELECT json_agg(row_to_json(mp)) FROM mission_performance mp\n    ),\n    'achievement_metrics', (\n      SELECT row_to_json(as_) FROM achievement_stats as_\n    ),\n    'habit_effectiveness', (\n      SELECT json_agg(row_to_json(he)) FROM habit_effectiveness he\n    ),\n    'event_engagement', (\n      SELECT json_agg(row_to_json(ee)) FROM event_engagement ee\n    ),\n    'journal_activity', (\n      SELECT row_to_json(ja) FROM journal_activity ja\n    ),\n    'content_creation_trends', (\n      SELECT json_agg(row_to_json(ct)) FROM content_trends ct\n    ),\n    'content_health_score', (\n      SELECT json_build_object(\n        'mission_completion_health', CASE\n          WHEN AVG(CASE WHEN status = 'completed' THEN 100.0 ELSE 0.0 END) > 70 THEN 'excellent'\n          WHEN AVG(CASE WHEN status = 'completed' THEN 100.0 ELSE 0.0 END) > 50 THEN 'good'\n          WHEN AVG(CASE WHEN status = 'completed' THEN 100.0 ELSE 0.0 END) > 30 THEN 'fair'\n          ELSE 'needs_improvement'\n        END,\n        'habit_engagement_health', CASE\n          WHEN AVG(streak) > 14 THEN 'excellent'\n          WHEN AVG(streak) > 7 THEN 'good'\n          WHEN AVG(streak) > 3 THEN 'fair'\n          ELSE 'needs_improvement'\n        END,\n        'achievement_unlock_health', CASE\n          WHEN (\n            SELECT COUNT(CASE WHEN unlocked_by IS NOT NULL THEN 1 END)::numeric / NULLIF(COUNT(*), 0) \n            FROM achievements\n          ) > 0.4 THEN 'excellent'\n          WHEN (\n            SELECT COUNT(CASE WHEN unlocked_by IS NOT NULL THEN 1 END)::numeric / NULLIF(COUNT(*), 0) \n            FROM achievements\n          ) > 0.2 THEN 'good'\n          ELSE 'needs_improvement'\n        END\n      )\n      FROM (\n        SELECT status, streak FROM missions \n        CROSS JOIN habits\n        LIMIT 1\n      ) health_calc\n    ),\n    'analysis_timestamp', now()\n  ) as analytics_data;",
+        "options": {}
+      },
+      "id": "f6g7h8i9-0d1e-2345-6789-abcdef012345",
+      "name": "Generate Content Performance Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Growth Metrics Analytics\nWITH user_growth AS (\n  SELECT \n    DATE_TRUNC('week', join_date) as week_start,\n    COUNT(*) as new_users,\n    SUM(COUNT(*)) OVER (ORDER BY DATE_TRUNC('week', join_date)) as cumulative_users\n  FROM users\n  WHERE join_date >= now() - interval '12 weeks'\n  GROUP BY DATE_TRUNC('week', join_date)\n  ORDER BY week_start\n),\nretention_analysis AS (\n  SELECT \n    EXTRACT(days FROM (now() - join_date))::integer / 7 as weeks_since_join,\n    COUNT(*) as user_cohort_size,\n    COUNT(\n      CASE WHEN (\n        SELECT MAX(created_at) \n        FROM system_logs sl \n        WHERE sl.user_id = u.id\n      ) >= now() - interval '7 days' THEN 1 END\n    ) as still_active_users,\n    ROUND(\n      (COUNT(\n        CASE WHEN (\n          SELECT MAX(created_at) \n          FROM system_logs sl \n          WHERE sl.user_id = u.id\n        ) >= now() - interval '7 days' THEN 1 END\n      )::numeric / COUNT(*)) * 100, 2\n    ) as retention_rate\n  FROM users u\n  WHERE join_date >= now() - interval '12 weeks'\n  GROUP BY weeks_since_join\n  HAVING COUNT(*) >= 5  -- Only include cohorts with meaningful size\n  ORDER BY weeks_since_join\n),\nfeature_adoption AS (\n  SELECT \n    'systems_created' as feature,\n    COUNT(DISTINCT owner_id) as adopted_users,\n    ROUND(\n      (COUNT(DISTINCT owner_id)::numeric / (SELECT COUNT(*) FROM users WHERE join_date <= now() - interval '1 week')) * 100, 2\n    ) as adoption_rate\n  FROM systems\n  WHERE created_at >= now() - interval '30 days'\n  \n  UNION ALL\n  \n  SELECT \n    'routines_created' as feature,\n    COUNT(DISTINCT s.owner_id) as adopted_users,\n    ROUND(\n      (COUNT(DISTINCT s.owner_id)::numeric / (SELECT COUNT(*) FROM users WHERE join_date <= now() - interval '1 week')) * 100, 2\n    ) as adoption_rate\n  FROM routines r\n  JOIN systems s ON r.system_id = s.id\n  WHERE r.created_at >= now() - interval '30 days'\n  \n  UNION ALL\n  \n  SELECT \n    'habits_created' as feature,\n    COUNT(DISTINCT c.user_id) as adopted_users,\n    ROUND(\n      (COUNT(DISTINCT c.user_id)::numeric / (SELECT COUNT(*) FROM users WHERE join_date <= now() - interval '1 week')) * 100, 2\n    ) as adoption_rate\n  FROM habits h\n  JOIN characters c ON h.character_id = c.id\n  WHERE h.created_at >= now() - interval '30 days'\n  \n  UNION ALL\n  \n  SELECT \n    'shop_purchases' as feature,\n    COUNT(DISTINCT c.user_id) as adopted_users,\n    ROUND(\n      (COUNT(DISTINCT c.user_id)::numeric / (SELECT COUNT(*) FROM users WHERE join_date <= now() - interval '1 week')) * 100, 2\n    ) as adoption_rate\n  FROM transactions t\n  JOIN characters c ON t.character_id = c.id\n  WHERE t.trans_date >= now() - interval '30 days'\n    AND t.type = 'purchase'\n),\nengagement_depth AS (\n  SELECT \n    user_id,\n    COUNT(DISTINCT DATE(created_at)) as active_days_30,\n    COUNT(*) as total_events_30,\n    COUNT(DISTINCT event_type) as unique_event_types,\n    CASE \n      WHEN COUNT(DISTINCT DATE(created_at)) >= 20 THEN 'high_engagement'\n      WHEN COUNT(DISTINCT DATE(created_at)) >= 10 THEN 'medium_engagement'\n      WHEN COUNT(DISTINCT DATE(created_at)) >= 3 THEN 'low_engagement'\n      ELSE 'minimal_engagement'\n    END as engagement_level\n  FROM system_logs\n  WHERE created_at >= now() - interval '30 days'\n  GROUP BY user_id\n),\nengagement_distribution AS (\n  SELECT \n    engagement_level,\n    COUNT(*) as user_count,\n    ROUND((COUNT(*)::numeric / SUM(COUNT(*)) OVER ()) * 100, 2) as percentage\n  FROM engagement_depth\n  GROUP BY engagement_level\n  ORDER BY \n    CASE engagement_level\n      WHEN 'high_engagement' THEN 1\n      WHEN 'medium_engagement' THEN 2\n      WHEN 'low_engagement' THEN 3\n      ELSE 4\n    END\n),\ngrowth_velocity AS (\n  SELECT \n    DATE_TRUNC('day', join_date) as signup_date,\n    COUNT(*) as daily_signups,\n    AVG(COUNT(*)) OVER (\n      ORDER BY DATE_TRUNC('day', join_date) \n      ROWS BETWEEN 6 PRECEDING AND CURRENT ROW\n    ) as seven_day_avg\n  FROM users\n  WHERE join_date >= now() - interval '30 days'\n  GROUP BY DATE_TRUNC('day', join_date)\n  ORDER BY signup_date DESC\n  LIMIT 30\n)\nSELECT \n  'growth_metrics' as report_type,\n  json_build_object(\n    'user_growth_trend', (\n      SELECT json_agg(row_to_json(ug)) FROM user_growth ug\n    ),\n    'retention_analysis', (\n      SELECT json_agg(row_to_json(ra)) FROM retention_analysis ra\n    ),\n    'feature_adoption_rates', (\n      SELECT json_agg(row_to_json(fa)) FROM feature_adoption fa\n    ),\n    'engagement_distribution', (\n      SELECT json_agg(row_to_json(ed)) FROM engagement_distribution ed\n    ),\n    'daily_signup_velocity', (\n      SELECT json_agg(row_to_json(gv)) FROM growth_velocity gv\n    ),\n    'growth_health_indicators', (\n      SELECT json_build_object(\n        'weekly_growth_rate', ROUND(\n          CASE \n            WHEN LAG(cumulative_users) OVER (ORDER BY week_start) > 0 THEN\n              ((cumulative_users - LAG(cumulative_users) OVER (ORDER BY week_start))::numeric / \n               LAG(cumulative_users) OVER (ORDER BY week_start)) * 100\n            ELSE 0\n          END, 2\n        ),\n        'avg_weekly_retention', ROUND(AVG(retention_rate), 2),\n        'user_base_health', CASE\n          WHEN AVG(retention_rate) > 60 THEN 'excellent'\n          WHEN AVG(retention_rate) > 40 THEN 'good'\n          WHEN AVG(retention_rate) > 20 THEN 'fair'\n          ELSE 'needs_improvement'\n        END\n      )\n      FROM (\n        SELECT \n          week_start, \n          cumulative_users,\n          (SELECT AVG(retention_rate) FROM retention_analysis) as retention_rate\n        FROM user_growth \n        ORDER BY week_start DESC \n        LIMIT 4\n      ) recent_growth\n    ),\n    'analysis_timestamp', now()\n  ) as analytics_data;",
+        "options": {}
+      },
+      "id": "g7h8i9j0-1e2f-3456-789a-bcdef0123456",
+      "name": "Generate Growth Metrics Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        600
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Comprehensive Analytics Report\nWITH summary_stats AS (\n  SELECT \n    'comprehensive_overview' as report_type,\n    json_build_object(\n      'database_overview', json_build_object(\n        'total_users', (SELECT COUNT(*) FROM users),\n        'total_characters', (SELECT COUNT(*) FROM characters),\n        'total_systems', (SELECT COUNT(*) FROM systems),\n        'total_routines', (SELECT COUNT(*) FROM routines),\n        'total_habits', (SELECT COUNT(*) FROM habits),\n        'total_missions', (SELECT COUNT(*) FROM missions),\n        'total_achievements', (SELECT COUNT(*) FROM achievements),\n        'database_size', pg_size_pretty(pg_database_size(current_database()))\n      ),\n      'activity_summary', json_build_object(\n        'active_users_7d', (\n          SELECT COUNT(DISTINCT user_id) \n          FROM system_logs \n          WHERE created_at >= now() - interval '7 days'\n        ),\n        'events_last_24h', (\n          SELECT COUNT(*) \n          FROM system_logs \n          WHERE created_at >= now() - interval '24 hours'\n        ),\n        'routine_completions_7d', (\n          SELECT COUNT(*) \n          FROM routine_completions \n          WHERE completed_at >= now() - interval '7 days'\n        ),\n        'missions_completed_7d', (\n          SELECT COUNT(*) \n          FROM missions \n          WHERE status = 'completed' \n            AND completed_at >= now() - interval '7 days'\n        )\n      ),\n      'system_health', json_build_object(\n        'systems_in_automate_stage', (\n          SELECT COUNT(*) \n          FROM systems \n          WHERE current_stage = 'automate'\n        ),\n        'avg_system_age_days', (\n          SELECT ROUND(AVG(EXTRACT(days FROM (now() - created_at))), 1) \n          FROM systems\n        ),\n        'most_popular_category', (\n          SELECT category \n          FROM systems \n          WHERE category IS NOT NULL \n          GROUP BY category \n          ORDER BY COUNT(*) DESC \n          LIMIT 1\n        ),\n        'completion_rate', (\n          SELECT ROUND(\n            (COUNT(CASE WHEN status = 'completed' THEN 1 END)::numeric / NULLIF(COUNT(*), 0)) * 100, 2\n          )\n          FROM routine_completions\n          WHERE completed_at >= now() - interval '30 days'\n        )\n      ),\n      'economy_snapshot', json_build_object(\n        'total_xp_economy', (SELECT SUM(xp) FROM characters),\n        'total_coins_economy', (SELECT SUM(coins) FROM characters),\n        'avg_character_level', (SELECT ROUND(AVG(level), 1) FROM characters),\n        'transactions_last_7d', (\n          SELECT COUNT(*) \n          FROM transactions \n          WHERE trans_date >= now() - interval '7 days'\n        )\n      ),\n      'content_engagement', json_build_object(\n        'achievement_unlock_rate', (\n          SELECT ROUND(\n            (COUNT(CASE WHEN unlocked_by IS NOT NULL THEN 1 END)::numeric / NULLIF(COUNT(*), 0)) * 100, 2\n          )\n          FROM achievements\n        ),\n        'avg_habit_streak', (\n          SELECT ROUND(AVG(streak), 1) \n          FROM habits \n          WHERE last_completed >= now() - interval '30 days'\n        ),\n        'journal_entries_30d', (\n          SELECT COUNT(*) \n          FROM journal \n          WHERE created_at >= now() - interval '30 days'\n        )\n      ),\n      'analysis_timestamp', now()\n    ) as analytics_data\n)\nSELECT * FROM summary_stats;",
+        "options": {}
+      },
+      "id": "h8i9j0k1-2f3g-4567-89ab-cdef01234567",
+      "name": "Generate Comprehensive Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process analytics results and format response\nconst webhookData = $('Webhook - Analytics Reporter').first().json;\nconst reportType = webhookData.report_type || 'comprehensive';\nconst timeRange = webhookData.time_range || '30d';\nconst includeRecommendations = webhookData.include_recommendations !== false;\n\nlet results = {\n  timestamp: new Date().toISOString(),\n  report_type: reportType,\n  time_range: timeRange,\n  status: 'success',\n  recommendations: [],\n  insights: [],\n  data_quality_score: 100\n};\n\n// Get the analytics data from the database query\nconst analyticsData = $input.first().json.analytics_data;\nresults.data = analyticsData;\n\n// Generate insights and recommendations based on report type\nif (reportType === 'user_engagement') {\n  const engagement = analyticsData.engagement_summary;\n  const retention7d = engagement.active_users_7d / engagement.total_users;\n  const retention30d = engagement.active_users_30d / engagement.total_users;\n  \n  results.insights.push({\n    category: 'user_retention',\n    metric: '7-day retention rate',\n    value: `${(retention7d * 100).toFixed(1)}%`,\n    trend: retention7d > 0.3 ? 'positive' : 'needs_attention',\n    description: `${engagement.active_users_7d} out of ${engagement.total_users} users were active in the last 7 days`\n  });\n  \n  if (includeRecommendations) {\n    if (retention7d < 0.3) {\n      results.recommendations.push({\n        priority: 'high',\n        category: 'user_engagement',\n        title: 'Improve user retention',\n        description: '7-day retention is below 30%',\n        action: 'Implement onboarding improvements and engagement campaigns',\n        expected_impact: 'Increase retention by 10-15%'\n      });\n    }\n    \n    if (engagement.new_users_7d > engagement.new_users_30d * 0.5) {\n      results.recommendations.push({\n        priority: 'medium',\n        category: 'growth',\n        title: 'Strong recent growth detected',\n        description: 'High proportion of new users in the last week',\n        action: 'Focus on new user onboarding and retention strategies',\n        expected_impact: 'Convert growth into long-term retention'\n      });\n    }\n  }\n  \n} else if (reportType === 'sbs_analytics') {\n  const systems = analyticsData.system_overview;\n  const stageDistribution = analyticsData.stage_distribution;\n  \n  results.insights.push({\n    category: 'sbs_adoption',\n    metric: 'System progression health',\n    value: `${systems.systems_automate + systems.systems_review} advanced systems`,\n    trend: (systems.systems_automate + systems.systems_review) > systems.total_systems * 0.2 ? 'positive' : 'needs_attention',\n    description: `${((systems.systems_automate + systems.systems_review) / systems.total_systems * 100).toFixed(1)}% of systems have reached advanced stages`\n  });\n  \n  if (includeRecommendations) {\n    if (stageDistribution.define_percent > 50) {\n      results.recommendations.push({\n        priority: 'medium',\n        category: 'sbs_progression',\n        title: 'Many systems stuck in define stage',\n        description: `${stageDistribution.define_percent}% of systems are in the define stage`,\n        action: 'Create guided workflows to help users progress to design stage',\n        expected_impact: 'Increase system progression by 20%'\n      });\n    }\n    \n    const completionMetrics = analyticsData.completion_metrics;\n    if (completionMetrics && completionMetrics.completions_7d < completionMetrics.total_completions * 0.1) {\n      results.recommendations.push({\n        priority: 'high',\n        category: 'routine_engagement',\n        title: 'Low routine completion rate',\n        description: 'Recent routine completions are below expected levels',\n        action: 'Review routine difficulty and add motivation mechanisms',\n        expected_impact: 'Increase completion rates by 15-25%'\n      });\n    }\n  }\n  \n} else if (reportType === 'game_economy') {\n  const economy = analyticsData.economy_summary;\n  const healthIndicators = analyticsData.economy_health_indicators;\n  \n  results.insights.push({\n    category: 'economy_balance',\n    metric: 'Coin distribution (Gini coefficient)',\n    value: healthIndicators.coin_distribution_gini,\n    trend: healthIndicators.coin_distribution_gini < 0.6 ? 'positive' : 'needs_attention',\n    description: 'Lower values indicate more balanced wealth distribution'\n  });\n  \n  if (includeRecommendations) {\n    if (healthIndicators.xp_inflation_risk === 'high') {\n      results.recommendations.push({\n        priority: 'high',\n        category: 'economy_balance',\n        title: 'XP inflation risk detected',\n        description: 'Average XP levels are very high, indicating possible inflation',\n        action: 'Review XP reward mechanisms and consider prestige incentives',\n        expected_impact: 'Maintain healthy economy balance'\n      });\n    }\n    \n    if (healthIndicators.prestige_adoption_rate < 5) {\n      results.recommendations.push({\n        priority: 'medium',\n        category: 'prestige_system',\n        title: 'Low prestige adoption',\n        description: `Only ${healthIndicators.prestige_adoption_rate}% of users have prestiged`,\n        action: 'Improve prestige benefits and communication',\n        expected_impact: 'Increase long-term engagement and economy health'\n      });\n    }\n  }\n  \n} else if (reportType === 'content_performance') {\n  const contentHealth = analyticsData.content_health_score;\n  \n  Object.entries(contentHealth).forEach(([metric, health]) => {\n    results.insights.push({\n      category: 'content_health',\n      metric: metric.replace('_', ' '),\n      value: health,\n      trend: health === 'excellent' ? 'positive' : health === 'needs_improvement' ? 'negative' : 'neutral',\n      description: `Content ${metric} is currently ${health}`\n    });\n  });\n  \n  if (includeRecommendations) {\n    if (contentHealth.mission_completion_health === 'needs_improvement') {\n      results.recommendations.push({\n        priority: 'high',\n        category: 'mission_optimization',\n        title: 'Mission completion rates need improvement',\n        description: 'Mission completion rates are below optimal levels',\n        action: 'Review mission difficulty and reward balance',\n        expected_impact: 'Increase completion rates by 20-30%'\n      });\n    }\n    \n    if (contentHealth.habit_engagement_health === 'needs_improvement') {\n      results.recommendations.push({\n        priority: 'medium',\n        category: 'habit_optimization',\n        title: 'Habit engagement could be improved',\n        description: 'Average habit streaks are lower than ideal',\n        action: 'Implement streak rewards and habit formation guidance',\n        expected_impact: 'Increase average streak length by 50%'\n      });\n    }\n  }\n  \n} else if (reportType === 'growth_metrics') {\n  const growthHealth = analyticsData.growth_health_indicators;\n  \n  results.insights.push({\n    category: 'growth_health',\n    metric: 'User base health',\n    value: growthHealth.user_base_health,\n    trend: growthHealth.user_base_health === 'excellent' ? 'positive' : 'needs_attention',\n    description: `Overall user base health is ${growthHealth.user_base_health} with ${growthHealth.avg_weekly_retention}% average retention`\n  });\n  \n  if (includeRecommendations) {\n    if (growthHealth.weekly_growth_rate < 5) {\n      results.recommendations.push({\n        priority: 'medium',\n        category: 'growth_acceleration',\n        title: 'Growth rate could be improved',\n        description: `Weekly growth rate is ${growthHealth.weekly_growth_rate}%`,\n        action: 'Implement referral programs and improve onboarding',\n        expected_impact: 'Increase growth rate to 8-12% weekly'\n      });\n    }\n    \n    if (growthHealth.user_base_health === 'needs_improvement') {\n      results.recommendations.push({\n        priority: 'high',\n        category: 'retention_improvement',\n        title: 'User retention needs immediate attention',\n        description: 'Overall user base health indicates retention issues',\n        action: 'Conduct user interviews and implement retention strategies',\n        expected_impact: 'Improve retention by 15-25%'\n      });\n    }\n  }\n}\n\n// Calculate overall data quality score\nif (analyticsData) {\n  results.data_quality_score = 95; // High quality if data is present\n} else {\n  results.data_quality_score = 50;\n  results.recommendations.push({\n    priority: 'high',\n    category: 'data_quality',\n    title: 'Data quality issues detected',\n    description: 'Some analytics data may be incomplete',\n    action: 'Review database integrity and data collection processes',\n    expected_impact: 'Improve analytics accuracy and reliability'\n  });\n}\n\n// Add general recommendations for comprehensive reports\nif (reportType === 'comprehensive' && includeRecommendations) {\n  results.recommendations.push({\n    priority: 'low',\n    category: 'analytics',\n    title: 'Regular analytics review',\n    description: 'Comprehensive analytics completed successfully',\n    action: 'Schedule regular analytics reviews to track progress',\n    expected_impact: 'Data-driven optimization of SBS ecosystem'\n  });\n}\n\nreturn { json: results };"
+      },
+      "id": "i9j0k1l2-3g4h-5678-90bc-def012345678",
+      "name": "Process Analytics Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "j0k1l2m3-4h5i-6789-01cd-ef0123456789",
+      "name": "Return Analytics Report",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Analytics Reporter": {
+      "main": [
+        [
+          {
+            "node": "Route Report Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Report Type": {
+      "main": [
+        [
+          {
+            "node": "Generate User Engagement Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate SBS Analytics Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Game Economy Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Content Performance Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Growth Metrics Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Comprehensive Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate User Engagement Report": {
+      "main": [
+        [
+          {
+            "node": "Process Analytics Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate SBS Analytics Report": {
+      "main": [
+        [
+          {
+            "node": "Process Analytics Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Game Economy Report": {
+      "main": [
+        [
+          {
+            "node": "Process Analytics Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Content Performance Report": {
+      "main": [
+        [
+          {
+            "node": "Process Analytics Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Growth Metrics Report": {
+      "main": [
+        [
+          {
+            "node": "Process Analytics Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Comprehensive Report": {
+      "main": [
+        [
+          {
+            "node": "Process Analytics Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Analytics Results": {
+      "main": [
+        [
+          {
+            "node": "Return Analytics Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "sbs_ecosystem_v3"
+  },
+  "id": "db_analytics_reporter",
+  "tags": [
+    "database",
+    "analytics",
+    "reporting",
+    "insights"
+  ],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

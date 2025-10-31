@@ -1,0 +1,445 @@
+{
+  "name": "SUBFLOW: SBS System Stage Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-system-stage",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_system_stage",
+      "name": "Webhook - System Stage",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "subflow-system-stage"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "system_id",
+              "name": "systemId",
+              "value": "={{ $json.body.system_id }}",
+              "type": "number"
+            },
+            {
+              "id": "action",
+              "name": "action",
+              "value": "={{ $json.body.action }}",
+              "type": "string"
+            },
+            {
+              "id": "target_stage",
+              "name": "targetStage",
+              "value": "={{ $json.body.target_stage }}",
+              "type": "string"
+            },
+            {
+              "id": "user_id",
+              "name": "userId",
+              "value": "={{ $json.body.user_id }}",
+              "type": "number"
+            },
+            {
+              "id": "auto_progression",
+              "name": "autoProgression",
+              "value": "={{ $json.body.auto_progression || false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "completion_data",
+              "name": "completionData",
+              "value": "={{ $json.body.completion_data || {} }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_stage_data",
+      "name": "Prepare Stage Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, user_id, name, description, category, current_stage, target_stage, created_at, updated_at\nFROM systems \nWHERE id = {{ $json.systemId }}\nAND ({{ $json.userId }} IS NULL OR user_id = {{ $json.userId }});",
+        "additionalFields": {
+          "mode": "single"
+        }
+      },
+      "id": "get_current_system",
+      "name": "Get Current System",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "system_exists",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check_system_exists",
+      "name": "Check System Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Determine stage progression logic\nconst systemData = $('Get Current System').item.json;\nconst stageData = $('Prepare Stage Data').item.json;\n\nconst currentStage = systemData.current_stage;\nconst targetStage = systemData.target_stage;\nconst requestedAction = stageData.action;\nconst requestedTargetStage = stageData.targetStage;\n\n// Define stage hierarchy\nconst stageHierarchy = {\n  'design': {\n    order: 1,\n    next: 'build',\n    requirements: ['system_created'],\n    completion_criteria: ['system_designed', 'components_defined']\n  },\n  'build': {\n    order: 2,\n    next: 'automate',\n    requirements: ['design_complete'],\n    completion_criteria: ['components_built', 'initial_testing']\n  },\n  'automate': {\n    order: 3,\n    next: 'review',\n    requirements: ['build_complete'],\n    completion_criteria: ['automation_implemented', 'workflow_tested']\n  },\n  'review': {\n    order: 4,\n    next: 'complete',\n    requirements: ['automation_complete'],\n    completion_criteria: ['performance_reviewed', 'optimization_identified']\n  },\n  'complete': {\n    order: 5,\n    next: null,\n    requirements: ['review_complete'],\n    completion_criteria: ['system_finalized', 'documentation_complete']\n  }\n};\n\n// Determine new stage based on action\nlet newStage = currentStage;\nlet validTransition = false;\nlet transitionReason = '';\n\nif (requestedAction === 'advance') {\n  // Advance to next stage\n  const currentStageInfo = stageHierarchy[currentStage];\n  if (currentStageInfo && currentStageInfo.next) {\n    newStage = currentStageInfo.next;\n    validTransition = true;\n    transitionReason = `Advanced from ${currentStage} to ${newStage}`;\n  } else {\n    transitionReason = `Cannot advance from ${currentStage} - already at final stage`;\n  }\n} else if (requestedAction === 'set_stage' && requestedTargetStage) {\n  // Set to specific stage\n  if (stageHierarchy[requestedTargetStage]) {\n    newStage = requestedTargetStage;\n    validTransition = true;\n    transitionReason = `Stage manually set to ${newStage}`;\n  } else {\n    transitionReason = `Invalid target stage: ${requestedTargetStage}`;\n  }\n} else if (requestedAction === 'complete_stage') {\n  // Mark current stage as complete and advance\n  const currentStageInfo = stageHierarchy[currentStage];\n  if (currentStageInfo && currentStageInfo.next) {\n    newStage = currentStageInfo.next;\n    validTransition = true;\n    transitionReason = `Completed ${currentStage} and advanced to ${newStage}`;\n  } else if (currentStage === 'review') {\n    newStage = 'complete';\n    validTransition = true;\n    transitionReason = `System completed - all stages finished`;\n  } else {\n    transitionReason = `Cannot complete ${currentStage} - invalid transition`;\n  }\n} else if (requestedAction === 'reset_stage') {\n  // Reset to design stage\n  newStage = 'design';\n  validTransition = true;\n  transitionReason = `System reset to design stage`;\n}\n\n// Calculate stage progression metrics\nconst currentOrder = stageHierarchy[currentStage]?.order || 0;\nconst newOrder = stageHierarchy[newStage]?.order || 0;\nconst totalStages = Object.keys(stageHierarchy).length;\n\nconst progressionData = {\n  system_id: systemData.id,\n  user_id: systemData.user_id,\n  system_name: systemData.name,\n  action_requested: requestedAction,\n  before: {\n    stage: currentStage,\n    order: currentOrder\n  },\n  after: {\n    stage: newStage,\n    order: newOrder\n  },\n  transition: {\n    valid: validTransition,\n    reason: transitionReason,\n    stage_changed: newStage !== currentStage\n  },\n  progress: {\n    current_progress: Math.round((newOrder / totalStages) * 100),\n    stages_completed: newOrder - 1,\n    stages_remaining: totalStages - newOrder,\n    is_complete: newStage === 'complete'\n  },\n  stage_info: stageHierarchy[newStage] || {},\n  completion_data: stageData.completionData,\n  auto_progression: stageData.autoProgression\n};\n\nreturn {\n  json: progressionData\n};"
+      },
+      "id": "calculate_stage_progression",
+      "name": "Calculate Stage Progression",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_valid_transition",
+              "leftValue": "={{ $json.transition.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check_valid_transition",
+      "name": "Check Valid Transition",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE systems \nSET \n  current_stage = '{{ $json.after.stage }}',\n  updated_at = NOW()\nWHERE id = {{ $json.system_id }}\nRETURNING id, name, current_stage, target_stage, updated_at;",
+        "additionalFields": {
+          "mode": "single"
+        }
+      },
+      "id": "update_system_stage",
+      "name": "Update System Stage",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1450, 200],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"system_id\": $json.system_id,\n  \"event\": \"stage_transition\",\n  \"details\": {\n    \"from_stage\": $json.before.stage,\n    \"to_stage\": $json.after.stage,\n    \"action_type\": $json.action_requested,\n    \"auto_progression\": $json.auto_progression,\n    \"transition_reason\": $json.transition.reason,\n    \"user_id\": $json.user_id,\n    \"completion_data\": $json.completion_data\n  }\n} }}",
+        "options": {}
+      },
+      "id": "log_stage_transition",
+      "name": "Log Stage Transition",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "system_completed",
+              "leftValue": "={{ $('Calculate Stage Progression').item.json.progress.is_complete }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check_system_completion",
+      "name": "Check System Completion",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-trigger-achievement",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": null,\n  \"user_id\": $('Calculate Stage Progression').item.json.user_id,\n  \"event_type\": \"system_completion\",\n  \"event_data\": {\n    \"system_id\": $('Calculate Stage Progression').item.json.system_id,\n    \"system_name\": $('Calculate Stage Progression').item.json.system_name,\n    \"completion_date\": $now,\n    \"stages_completed\": 5\n  }\n} }}",
+        "options": {}
+      },
+      "id": "trigger_completion_achievement",
+      "name": "Trigger Completion Achievement",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1850, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all stage progression results\nconst progressionData = $('Calculate Stage Progression').item.json;\nconst systemUpdate = $('Update System Stage').item.json;\n\n// Build comprehensive response\nconst response = {\n  success: true,\n  system_progression: progressionData,\n  system_updated: systemUpdate,\n  stage_changed: progressionData.transition.stage_changed,\n  notifications: []\n};\n\n// Add stage transition notification\nif (progressionData.transition.stage_changed) {\n  response.notifications.push({\n    type: \"stage_transition\",\n    title: \"System Stage Updated\",\n    message: progressionData.transition.reason,\n    system: {\n      id: progressionData.system_id,\n      name: progressionData.system_name,\n      old_stage: progressionData.before.stage,\n      new_stage: progressionData.after.stage,\n      progress_percentage: progressionData.progress.current_progress\n    }\n  });\n}\n\n// Add completion notification\nif (progressionData.progress.is_complete) {\n  response.notifications.push({\n    type: \"system_completion\",\n    title: \"System Complete!\",\n    message: `Congratulations! Your ${progressionData.system_name} system is now complete!`,\n    celebration: {\n      system_name: progressionData.system_name,\n      completion_date: new Date().toISOString(),\n      stages_completed: 5\n    }\n  });\n}\n\n// Add next steps if not complete\nif (!progressionData.progress.is_complete) {\n  const nextStageInfo = progressionData.stage_info;\n  if (nextStageInfo) {\n    response.next_steps = {\n      current_stage: progressionData.after.stage,\n      requirements: nextStageInfo.requirements || [],\n      completion_criteria: nextStageInfo.completion_criteria || [],\n      next_stage: nextStageInfo.next\n    };\n  }\n}\n\nreturn {\n  json: response\n};"
+      },
+      "id": "combine_stage_results",
+      "name": "Combine Stage Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "send_stage_success",
+      "name": "Send Stage Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Invalid transition\",\n  \"message\": $('Calculate Stage Progression').item.json.transition.reason\n} }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "send_invalid_transition",
+      "name": "Send Invalid Transition",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1450, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"System not found\",\n  \"message\": \"No system found with the provided ID\"\n} }}",
+        "options": {
+          "responseCode": "404"
+        }
+      },
+      "id": "send_system_not_found",
+      "name": "Send System Not Found",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1050, 500]
+    }
+  ],
+  "connections": {
+    "Webhook - System Stage": {
+      "main": [
+        [
+          {
+            "node": "Prepare Stage Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Stage Data": {
+      "main": [
+        [
+          {
+            "node": "Get Current System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current System": {
+      "main": [
+        [
+          {
+            "node": "Check System Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check System Exists": {
+      "main": [
+        [
+          {
+            "node": "Calculate Stage Progression",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send System Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Stage Progression": {
+      "main": [
+        [
+          {
+            "node": "Check Valid Transition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Valid Transition": {
+      "main": [
+        [
+          {
+            "node": "Update System Stage",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Stage Transition",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Invalid Transition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update System Stage": {
+      "main": [
+        [
+          {
+            "node": "Check System Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Stage Transition": {
+      "main": [
+        [
+          {
+            "node": "Check System Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check System Completion": {
+      "main": [
+        [
+          {
+            "node": "Trigger Completion Achievement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Combine Stage Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Completion Achievement": {
+      "main": [
+        [
+          {
+            "node": "Combine Stage Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Stage Results": {
+      "main": [
+        [
+          {
+            "node": "Send Stage Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "versionId": "subflow-system-stage-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "subflow-system-stage",
+  "tags": ["subflow", "system", "stage-management", "progression", "reusable"]
+}

@@ -1,0 +1,83 @@
+{
+  "meta": {
+    "instanceId": "subflow-standardized-response"
+  },
+  "name": "SUBFLOW: Standardized Response",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "subflow-standardized-response",
+        "options": {}
+      },
+      "id": "webhook_response_handler",
+      "name": "Webhook - Response Handler",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "subflow-standardized-response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Standardized Response Generator\nconst responseData = $json;\nconst responseType = responseData.response_type || 'success'; // success, error, validation_error, not_found\nconst statusCode = responseData.status_code || (responseType === 'success' ? 200 : 400);\nconst message = responseData.message || '';\nconst data = responseData.data || null;\nconst error = responseData.error || null;\nconst context = responseData.context || {};\n\n// Standard response templates\nconst responseTemplates = {\n  success: {\n    success: true,\n    message: message || 'Operation completed successfully',\n    status_code: statusCode\n  },\n  error: {\n    success: false,\n    error: error || 'An error occurred',\n    message: message || 'Operation failed',\n    status_code: statusCode\n  },\n  validation_error: {\n    success: false,\n    error: 'Validation failed',\n    message: message || 'Invalid input data provided',\n    status_code: statusCode || 400\n  },\n  not_found: {\n    success: false,\n    error: 'Resource not found',\n    message: message || 'Requested resource could not be found',\n    status_code: statusCode || 404\n  },\n  unauthorized: {\n    success: false,\n    error: 'Unauthorized access',\n    message: message || 'Authentication required or insufficient permissions',\n    status_code: statusCode || 401\n  },\n  server_error: {\n    success: false,\n    error: 'Internal server error',\n    message: message || 'An internal server error occurred',\n    status_code: statusCode || 500\n  }\n};\n\n// Get base response template\nconst baseResponse = responseTemplates[responseType] || responseTemplates.error;\n\n// Build comprehensive response\nconst response = {\n  ...baseResponse,\n  timestamp: new Date().toISOString(),\n  request_id: context.request_id || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`\n};\n\n// Add data if provided and successful\nif (responseType === 'success' && data !== null) {\n  response.data = data;\n}\n\n// Add detailed error information for failures\nif (!response.success) {\n  response.error_details = {\n    error_type: responseType,\n    error_code: responseData.error_code || `${responseType.toUpperCase()}_ERROR`,\n    timestamp: response.timestamp\n  };\n  \n  // Add validation errors if provided\n  if (responseData.validation_errors) {\n    response.error_details.validation_errors = responseData.validation_errors;\n  }\n  \n  // Add suggestions for common errors\n  const errorSuggestions = {\n    validation_error: [\n      'Check that all required fields are provided',\n      'Verify data types match expected format',\n      'Ensure values are within acceptable ranges'\n    ],\n    not_found: [\n      'Verify the ID or identifier is correct',\n      'Check if the resource still exists',\n      'Ensure you have permission to access this resource'\n    ],\n    unauthorized: [\n      'Check your authentication credentials',\n      'Verify you have permission for this operation',\n      'Ensure your session is still valid'\n    ]\n  };\n  \n  if (errorSuggestions[responseType]) {\n    response.suggestions = errorSuggestions[responseType];\n  }\n}\n\n// Add context information if provided\nif (Object.keys(context).length > 0) {\n  response.context = {\n    workflow: context.workflow || 'unknown',\n    operation: context.operation || 'unknown',\n    user_id: context.user_id || null,\n    character_id: context.character_id || null,\n    ...context\n  };\n}\n\n// Add performance metadata\nif (responseData.performance) {\n  response.performance = {\n    processing_time_ms: responseData.performance.processing_time_ms || null,\n    database_queries: responseData.performance.database_queries || 0,\n    api_calls: responseData.performance.api_calls || 0\n  };\n}\n\n// Add pagination for list responses\nif (responseType === 'success' && responseData.pagination) {\n  response.pagination = {\n    total: responseData.pagination.total || 0,\n    page: responseData.pagination.page || 1,\n    limit: responseData.pagination.limit || 20,\n    has_more: responseData.pagination.has_more || false\n  };\n}\n\nreturn {\n  json: {\n    response_body: response,\n    status_code: response.status_code,\n    headers: responseData.headers || { 'Content-Type': 'application/json' }\n  }\n};"
+      },
+      "id": "generate_response",
+      "name": "Generate Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": "={{ $json.status_code }}",
+        "responseBody": "={{ $json.response_body }}",
+        "responseHeaders": "={{ $json.headers }}",
+        "options": {}
+      },
+      "id": "send_standardized_response",
+      "name": "Send Standardized Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        400,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Response Handler": {
+      "main": [
+        [
+          {
+            "node": "Generate Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Response": {
+      "main": [
+        [
+          {
+            "node": "Send Standardized Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": true,
+  "versionId": "1",
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

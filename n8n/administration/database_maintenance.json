@@ -1,0 +1,625 @@
+{
+  "name": "🛠️ Database Maintenance Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        336
+      ],
+      "id": "e3b2c93c-f2ac-420f-a251-8a22dc87ead2",
+      "name": "When chat message received",
+      "webhookId": "6c1554b0-9071-4fef-aa05-9faa55ba706d"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {
+          "maxTokens": 4000,
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        576
+      ],
+      "id": "b6d6edc6-939e-44b1-a00c-73780ff5b15a",
+      "name": "OpenAI GPT-4o Model"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        576
+      ],
+      "id": "250827ad-fb9b-426c-abbe-51ed89bfc78d",
+      "name": "Postgres Chat Memory"
+    },
+    {
+      "parameters": {
+        "name": "database_analytics_reporter",
+        "description": "📊 Generate comprehensive database analytics and business intelligence reports. Provides insights into user engagement, SBS system performance, game economy metrics, content effectiveness, and growth patterns. Essential for data-driven decision making and business optimization.",
+        "url": "={{ $vars.BASE_URL }}/webhook/db-analytics-reporter",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "parametersBody": {
+          "parameters": [
+            {
+              "name": "operation",
+              "description": "Type of analytics report to generate",
+              "value": "={{ $parameter.operation }}"
+            },
+            {
+              "name": "date_range",
+              "description": "Time period for analysis (7_days, 30_days, 90_days, 1_year)",
+              "value": "={{ $parameter.date_range || '30_days' }}"
+            },
+            {
+              "name": "filters",
+              "description": "Optional filters for targeted analysis",
+              "value": "={{ $parameter.filters || {} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        368,
+        576
+      ],
+      "id": "557504b9-82ce-415c-b700-37f5b7f14b26",
+      "name": "Database Analytics Reporter Tool"
+    },
+    {
+      "parameters": {
+        "name": "database_migration_manager",
+        "description": "🔄 Handle database schema migrations, version management, and structural changes. Manages schema evolution, migration execution, rollbacks, index optimization, and constraint management. Critical for safe database updates and version control.",
+        "url": "={{ $vars.BASE_URL }}/webhook/db-migration-manager",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "parametersBody": {
+          "parameters": [
+            {
+              "name": "operation",
+              "description": "Migration operation to perform",
+              "value": "={{ $parameter.operation }}"
+            },
+            {
+              "name": "migration_id",
+              "description": "Specific migration identifier (for run/rollback operations)",
+              "value": "={{ $parameter.migration_id || null }}"
+            },
+            {
+              "name": "target_version",
+              "description": "Target schema version for migration",
+              "value": "={{ $parameter.target_version || null }}"
+            },
+            {
+              "name": "dry_run",
+              "description": "Test migration without executing (recommended for safety)",
+              "value": "={{ $parameter.dry_run || true }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        576
+      ],
+      "id": "9b41f3ec-3732-481b-b595-12e31d74f4bd",
+      "name": "Database Migration Manager Tool"
+    },
+    {
+      "parameters": {
+        "name": "sbs_data_optimizer",
+        "description": "🎯 Optimize SBS ecosystem data patterns and analyze system lifecycle performance. Specializes in SBS system progression analysis, routine effectiveness evaluation, and workflow optimization. Provides actionable insights for improving user engagement and system completion rates.",
+        "url": "={{ $vars.BASE_URL }}/webhook/sbs-data-optimizer",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "parametersBody": {
+          "parameters": [
+            {
+              "name": "operation",
+              "description": "SBS optimization operation to perform",
+              "value": "={{ $parameter.operation }}"
+            },
+            {
+              "name": "analysis_period",
+              "description": "Time period for SBS analysis (7_days, 30_days, 90_days)",
+              "value": "={{ $parameter.analysis_period || '30_days' }}"
+            },
+            {
+              "name": "system_categories",
+              "description": "Specific SBS system categories to analyze (empty for all)",
+              "value": "={{ $parameter.system_categories || [] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        688,
+        576
+      ],
+      "id": "91ff5c04-f03d-4a11-b8eb-b85989c6d08b",
+      "name": "SBS Data Optimizer Tool"
+    },
+    {
+      "parameters": {
+        "name": "database_backup_recovery",
+        "description": "💾 Comprehensive database backup and disaster recovery operations. Handles backup creation, restoration, backup management, and system recovery. Essential for data protection, disaster recovery planning, and system restore operations.",
+        "url": "={{ $vars.BASE_URL }}/webhook/db-backup-recovery",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "parametersBody": {
+          "parameters": [
+            {
+              "name": "operation",
+              "description": "Backup/recovery operation to perform",
+              "value": "={{ $parameter.operation }}"
+            },
+            {
+              "name": "backup_file",
+              "description": "Backup filename for restore operations",
+              "value": "={{ $parameter.backup_file || null }}"
+            },
+            {
+              "name": "restore_type",
+              "description": "Type of restore: full or schema_only",
+              "value": "={{ $parameter.restore_type || 'full' }}"
+            },
+            {
+              "name": "confirm_production",
+              "description": "Required confirmation for production database operations",
+              "value": "={{ $parameter.confirm_production || false }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        848,
+        576
+      ],
+      "id": "dbe7f1b9-ad1e-44d9-a83e-fdd9a07c0d31",
+      "name": "Database Backup Recovery Tool"
+    },
+    {
+      "parameters": {
+        "name": "database_cleanup_manager",
+        "description": "🧹 Database cleanup and storage optimization operations. Removes old logs, orphaned records, duplicate data, and performs VACUUM operations. Essential for maintaining optimal database performance and storage efficiency.",
+        "url": "={{ $vars.BASE_URL }}/webhook/db-cleanup-manager",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "parametersBody": {
+          "parameters": [
+            {
+              "name": "operation",
+              "description": "Cleanup operation to perform",
+              "value": "={{ $parameter.operation }}"
+            },
+            {
+              "name": "days_to_keep",
+              "description": "Number of days of data to retain (for log cleanup)",
+              "value": "={{ $parameter.days_to_keep || 30 }}"
+            },
+            {
+              "name": "table_name",
+              "description": "Specific table to target (optional, null for all tables)",
+              "value": "={{ $parameter.table_name || null }}"
+            },
+            {
+              "name": "dry_run",
+              "description": "Preview changes without executing (recommended)",
+              "value": "={{ $parameter.dry_run || true }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        1008,
+        576
+      ],
+      "id": "3e0c8369-bfc9-46d6-a1f6-3faf212a2527",
+      "name": "Database Cleanup Manager Tool"
+    },
+    {
+      "parameters": {
+        "name": "database_health_analyzer",
+        "description": "🔍 Database health monitoring and proactive maintenance analysis. Analyzes table health metrics, detects bloat issues, and provides insights for preventive maintenance. Critical for maintaining optimal database performance and preventing issues.",
+        "url": "={{ $vars.BASE_URL }}/webhook/db-health-analyzer",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "parametersBody": {
+          "parameters": [
+            {
+              "name": "operation",
+              "description": "Health analysis operation to perform",
+              "value": "={{ $parameter.operation }}"
+            },
+            {
+              "name": "table_name",
+              "description": "Specific table to analyze (optional, null for all tables)",
+              "value": "={{ $parameter.table_name || null }}"
+            },
+            {
+              "name": "bloat_threshold",
+              "description": "Bloat percentage threshold for alerts (default: 20%)",
+              "value": "={{ $parameter.bloat_threshold || 20 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        1152,
+        576
+      ],
+      "id": "1ecd1789-dced-4247-9991-915b8ce8dfd6",
+      "name": "Database Health Analyzer Tool"
+    },
+    {
+      "parameters": {
+        "name": "database_performance_monitor",
+        "description": "⚡ Database performance monitoring and query optimization. Tracks query execution times, identifies bottlenecks, analyzes table performance statistics, and provides optimization recommendations. Essential for maintaining fast database response times.",
+        "url": "={{ $vars.BASE_URL }}/webhook/db-performance-monitor",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "parametersBody": {
+          "parameters": [
+            {
+              "name": "operation",
+              "description": "Performance monitoring operation to perform",
+              "value": "={{ $parameter.operation }}"
+            },
+            {
+              "name": "time_range",
+              "description": "Time period for performance analysis (1_hour, 24_hours, 7_days)",
+              "value": "={{ $parameter.time_range || '24_hours' }}"
+            },
+            {
+              "name": "min_duration",
+              "description": "Minimum query duration in milliseconds to analyze",
+              "value": "={{ $parameter.min_duration || 1000 }}"
+            },
+            {
+              "name": "table_name",
+              "description": "Specific table for statistics (optional)",
+              "value": "={{ $parameter.table_name || null }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        576
+      ],
+      "id": "39d0341c-a224-424c-b4a9-3de833fa4685",
+      "name": "Database Performance Monitor Tool"
+    },
+    {
+      "parameters": {
+        "name": "database_security_auditor",
+        "description": "🔒 Database security auditing and compliance monitoring. Analyzes user permissions, data integrity, access patterns, and security vulnerabilities. Critical for maintaining data security, compliance, and identifying potential security risks.",
+        "url": "={{ $vars.BASE_URL }}/webhook/db-security-auditor",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "parametersBody": {
+          "parameters": [
+            {
+              "name": "operation",
+              "description": "Security audit operation to perform",
+              "value": "={{ $parameter.operation }}"
+            },
+            {
+              "name": "username",
+              "description": "Specific user to audit (optional, null for all users)",
+              "value": "={{ $parameter.username || null }}"
+            },
+            {
+              "name": "audit_period",
+              "description": "Time period for access pattern analysis (7_days, 30_days, 90_days)",
+              "value": "={{ $parameter.audit_period || '7_days' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        1424,
+        576
+      ],
+      "id": "d1dd9b88-3349-42a5-9d05-e772aeef631e",
+      "name": "Database Security Auditor Tool"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "# 🛠️ Database Maintenance Expert AI Agent\n\nYou are a specialized AI agent for comprehensive database maintenance and optimization of the SBS (Step-by-Step) ecosystem. Your role is to intelligently select and use the appropriate database tools based on user requests.\n\n## 🎯 Your Core Mission\n- **Database Health Guardian**: Monitor and maintain optimal database performance\n- **Analytics Expert**: Generate insights from database metrics and user patterns\n- **Security Specialist**: Ensure data integrity and compliance\n- **Performance Optimizer**: Identify and resolve bottlenecks\n- **SBS Ecosystem Expert**: Understand SBS-specific data patterns and optimization needs\n\n## 🔧 Available Tools & When to Use Them\n\n### 📊 Database Analytics Reporter Tool\n**USE WHEN**: User asks for reports, analytics, insights, metrics, or business intelligence\n**OPERATIONS**:\n- `user_engagement`: User activity, login patterns, session data\n- `sbs_analytics`: SBS system usage, completion rates, progression\n- `game_economy`: Virtual currency, transactions, economic metrics\n- `content_performance`: Content engagement, popularity, effectiveness\n- `growth_metrics`: User growth, retention, churn analysis\n- `comprehensive`: Full analytics suite with all metrics\n**EXAMPLES**: \"Generate user report\", \"Show SBS analytics\", \"How is our economy performing?\"\n\n### 🔄 Database Migration Manager Tool\n**USE WHEN**: Schema changes, database updates, migrations, version management\n**OPERATIONS**:\n- `schema_version`: Check current database schema version\n- `run_migration`: Execute migration scripts\n- `rollback_migration`: Revert to previous version\n- `index_management`: Create/optimize database indexes\n- `constraint_management`: Manage foreign keys and constraints\n- `data_migration`: Move data between schemas/tables\n**EXAMPLES**: \"Update database schema\", \"Run migration\", \"Check version\", \"Add index\"\n\n### 🎯 SBS Data Optimizer Tool\n**USE WHEN**: SBS-specific optimization, system progression analysis, routine effectiveness\n**OPERATIONS**:\n- `lifecycle_optimization`: Analyze SBS system stage progression and optimization opportunities\n**EXAMPLES**: \"Optimize SBS systems\", \"Analyze progression patterns\", \"Improve completion rates\"\n\n### 💾 Database Backup Recovery Tool\n**USE WHEN**: Data protection, backups, disaster recovery, system restore\n**OPERATIONS**:\n- `create_backup`: Create new database backup\n- `list_backups`: Show available backups with metadata\n- `restore_backup`: Restore from backup file\n- `backup_status`: Check backup system health\n**EXAMPLES**: \"Create backup\", \"Restore database\", \"List backups\", \"Backup status\"\n\n### 🧹 Database Cleanup Manager Tool\n**USE WHEN**: Storage optimization, removing old data, cleaning duplicates\n**OPERATIONS**:\n- `cleanup_logs`: Remove old log entries\n- `cleanup_orphans`: Remove orphaned records\n- `vacuum_tables`: Run VACUUM operations for space recovery\n- `duplicate_check`: Find and remove duplicate data\n**EXAMPLES**: \"Clean old logs\", \"Remove orphaned data\", \"Optimize storage\", \"Find duplicates\"\n\n### 🔍 Database Health Analyzer Tool\n**USE WHEN**: Health checks, system monitoring, proactive maintenance\n**OPERATIONS**:\n- `table_analysis`: Analyze table health and performance metrics\n- `bloat_analysis`: Detect table/index bloat for optimization\n**EXAMPLES**: \"Check database health\", \"Analyze table performance\", \"Find bloated tables\"\n\n### ⚡ Database Performance Monitor Tool\n**USE WHEN**: Performance issues, slow queries, optimization needs\n**OPERATIONS**:\n- `query_performance`: Analyze slow queries and execution times\n- `table_stats`: Get detailed table performance statistics\n**EXAMPLES**: \"Find slow queries\", \"Performance analysis\", \"Optimize performance\", \"Table statistics\"\n\n### 🔒 Database Security Auditor Tool\n**USE WHEN**: Security concerns, compliance checks, access audits\n**OPERATIONS**:\n- `user_permissions`: Audit user access rights and permissions\n- `data_integrity`: Check data consistency and referential integrity\n- `access_patterns`: Analyze database access patterns for security\n**EXAMPLES**: \"Security audit\", \"Check permissions\", \"Data integrity check\", \"Access analysis\"\n\n## 🎭 Tool Selection Strategy\n\n### Multi-Tool Scenarios\n**Health Check Request**: Use Health Analyzer + Performance Monitor + Security Auditor\n**System Optimization**: Use SBS Optimizer + Performance Monitor + Cleanup Manager\n**Complete Audit**: Use Analytics Reporter + Security Auditor + Health Analyzer\n**Pre-Migration**: Use Backup Recovery (create_backup) + Migration Manager\n\n### Parameter Guidelines\n- **Always use dry_run=true** for destructive operations initially\n- **Include date_range** for analytics (default: 30_days)\n- **Specify confirm_production=true** only when explicitly confirmed\n- **Use appropriate time_range** for performance analysis\n\n## 🗣️ Communication Style\n\n### Response Structure\n1. **Operation Summary**: Brief explanation of what you're doing\n2. **Tool Selection Reasoning**: Why you chose specific tools\n3. **Results Interpretation**: Explain findings in business context\n4. **Actionable Recommendations**: Specific next steps\n5. **Proactive Suggestions**: Additional optimizations or monitoring\n\n### Key Behaviors\n- **Explain tool selection**: Always explain why you chose specific tools\n- **Interpret technical data**: Translate technical metrics into business impact\n- **Suggest proactive measures**: Recommend preventive maintenance\n- **Consider security**: Always factor in security implications\n- **Think SBS-specific**: Understand the unique needs of the SBS ecosystem\n- **Be thorough**: Use multiple tools when comprehensive analysis is needed\n\n## ⚠️ Safety Protocols\n- **Never run destructive operations** without explicit confirmation\n- **Always backup before major changes**\n- **Use dry_run when available**\n- **Explain risks** for potentially dangerous operations\n- **Verify production safeguards** are in place\n\nYou are the guardian of the SBS database ecosystem - be thorough, intelligent, and always prioritize data safety while maximizing system performance.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.promptTemplate",
+      "typeVersion": 1,
+      "position": [
+        240,
+        480
+      ],
+      "id": "system-prompt-template",
+      "name": "Database Maintenance System Prompt"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        464,
+        336
+      ],
+      "id": "8f7cc6fd-e946-4b08-a656-7826fd835003",
+      "name": "Database Maintenance AI Agent"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Maintenance System Prompt": {
+      "ai_prompts": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_prompts",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4o Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Analytics Reporter Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Migration Manager Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SBS Data Optimizer Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Backup Recovery Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Cleanup Manager Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Health Analyzer Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Performance Monitor Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Security Auditor Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Database Maintenance AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "3XifOvsFuRnmIJK2",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

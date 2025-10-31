@@ -1,0 +1,435 @@
+{
+  "name": "SKILL_PROGRESSION",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "skill-progression",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_skill_progression",
+      "name": "Webhook - SBS Skill Progression",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "sbs-skill-progression"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "system_id_check",
+              "leftValue": "={{ $json.body.system_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "progression_type_check",
+              "leftValue": "={{ $json.body.progression_type }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate_input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.*, c.id as character_id FROM systems s JOIN characters c ON s.user_id = c.user_id WHERE s.id = $1",
+        "options": {}
+      },
+      "id": "get_system_details",
+      "name": "Get System Details",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate skill XP based on SBS progression type\nconst progressionType = $('Webhook - SBS Skill Progression').item.json.body.progression_type;\nconst systemDetails = $('Get System Details').item.json;\n\n// Map system categories to skills\nconst categoryToSkillMap = {\n  'health': 'Health & Fitness',\n  'wealth': 'Career & Work',\n  'mindset': 'Learning & Knowledge',\n  'purpose': 'Social & Relationships',\n  'general': 'Learning & Knowledge'\n};\n\n// Calculate XP based on progression type\nconst xpRewards = {\n  'stage_progression': 25,      // Moving to next stage\n  'routine_completion': 15,     // Completing a routine\n  'automation_achieved': 40,    // Achieving automation\n  'system_optimization': 30,    // System improvements\n  'habit_consistency': 20,      // Consistent habit performance\n  'milestone_reached': 50       // Major milestones\n};\n\nconst skillXP = xpRewards[progressionType] || 10;\nconst targetSkill = categoryToSkillMap[systemDetails.category] || 'Learning & Knowledge';\n\nreturn {\n  json: {\n    character_id: systemDetails.character_id,\n    target_skill: targetSkill,\n    xp_to_award: skillXP,\n    progression_type: progressionType,\n    system_name: systemDetails.name,\n    system_category: systemDetails.category,\n    current_stage: systemDetails.current_stage || systemDetails.stage\n  }\n};"
+      },
+      "id": "calculate_skill_progression",
+      "name": "Calculate Skill Progression",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM skills WHERE character_id = $1 AND name = $2",
+        "options": {}
+      },
+      "id": "get_current_skill",
+      "name": "Get Current Skill",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate new skill level based on XP\nconst currentSkill = $('Get Current Skill').item.json;\nconst xpToAward = $('Calculate Skill Progression').item.json.xp_to_award;\n\nconst currentXP = currentSkill.xp || 0;\nconst currentLevel = currentSkill.level || 1;\nconst newXP = currentXP + xpToAward;\n\n// Level calculation: Every 100 XP = 1 level\nconst newLevel = Math.floor(newXP / 100) + 1;\nconst leveledUp = newLevel > currentLevel;\n\nreturn {\n  json: {\n    character_id: currentSkill.character_id,\n    skill_name: currentSkill.name,\n    old_xp: currentXP,\n    new_xp: newXP,\n    old_level: currentLevel,\n    new_level: newLevel,\n    leveled_up: leveledUp,\n    xp_gained: xpToAward\n  }\n};"
+      },
+      "id": "calculate_new_level",
+      "name": "Calculate New Level",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE skills SET xp = $1, level = $2 WHERE character_id = $3 AND name = $4 RETURNING *",
+        "options": {}
+      },
+      "id": "update_skill",
+      "name": "Update Skill",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1450,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "leveled_up_check",
+              "leftValue": "={{ $('Calculate New Level').item.json.leveled_up }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check_level_up",
+      "name": "Check Level Up",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE characters SET coins = coins + $1 WHERE id = $2 RETURNING *",
+        "options": {}
+      },
+      "id": "award_level_up_bonus",
+      "name": "Award Level Up Bonus",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1850,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Find Skill Level').item.json.character_id,\n  \"event_type\": \"skill_level_up\",\n  \"xp_change\": 0,\n  \"coins_change\": $('Update Coin Balance').item.json.coins,\n  \"description\": \"Skill level up: \" + $('Find Skill Level').item.json.name + \" reached level \" + $('Update Skill').item.json.level\n} }}",
+        "options": {}
+      },
+      "id": "log_level_up_event",
+      "name": "Log Level Up Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2.4,
+      "position": [
+        2050,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Find Skill Level').item.json.character_id,\n  \"event_type\": \"sbs_skill_progression\",\n  \"description\": \"Skill progression triggered by SBS system\"\n} }}",
+        "options": {}
+      },
+      "id": "log_skill_progression",
+      "name": "Log Skill Progression",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1850,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \n  \"success\": true,\n  \"skill_progression\": {\n    \"skill_name\": $('Calculate New Level').item.json.skill_name,\n    \"xp_gained\": $('Calculate New Level').item.json.xp_gained,\n    \"new_xp\": $('Calculate New Level').item.json.new_xp,\n    \"new_level\": $('Calculate New Level').item.json.new_level,\n    \"leveled_up\": $('Calculate New Level').item.json.leveled_up\n  },\n  \"system_info\": {\n    \"system_name\": $('Calculate Skill Progression').item.json.system_name,\n    \"progression_type\": $('Calculate Skill Progression').item.json.progression_type\n  },\n  \"bonus_awarded\": $('Calculate New Level').item.json.leveled_up ? ($('Calculate New Level').item.json.new_level * 10) : 0,\n  \"message\": $('Calculate New Level').item.json.leveled_up ? \n    \"🎉 \" + $('Calculate New Level').item.json.skill_name + \" leveled up to \" + $('Calculate New Level').item.json.new_level + \"! SBS system progress drives skill mastery!\" :\n    \"💪 \" + $('Calculate New Level').item.json.skill_name + \" gained \" + $('Calculate New Level').item.json.xp_gained + \" XP through SBS system development!\"\n} }}",
+        "options": {}
+      },
+      "id": "respond_success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": false, \"error\": \"Missing required fields: system_id and progression_type are required\" } }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "respond_error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        650,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "webhook_skill_progression": {
+      "main": [
+        [
+          {
+            "node": "validate_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate_input": {
+      "main": [
+        [
+          {
+            "node": "get_system_details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "respond_error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_system_details": {
+      "main": [
+        [
+          {
+            "node": "calculate_skill_progression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_skill_progression": {
+      "main": [
+        [
+          {
+            "node": "get_current_skill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_current_skill": {
+      "main": [
+        [
+          {
+            "node": "calculate_new_level",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_new_level": {
+      "main": [
+        [
+          {
+            "node": "update_skill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update_skill": {
+      "main": [
+        [
+          {
+            "node": "check_level_up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_level_up": {
+      "main": [
+        [
+          {
+            "node": "award_level_up_bonus",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "log_skill_progression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "award_level_up_bonus": {
+      "main": [
+        [
+          {
+            "node": "log_level_up_event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log_level_up_event": {
+      "main": [
+        [
+          {
+            "node": "respond_success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log_skill_progression": {
+      "main": [
+        [
+          {
+            "node": "respond_success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "sbs-skill-progression",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

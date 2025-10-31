@@ -1,0 +1,334 @@
+{
+  "name": "📈 Database Backup & Recovery Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "db-backup-recovery",
+        "options": {}
+      },
+      "id": "da15d3c9-b92f-4f04-8646-236a1ac8e9d7",
+      "name": "Webhook - Backup Manager",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -656,
+        400
+      ],
+      "webhookId": "db-backup-recovery"
+    },
+    {
+      "parameters": {
+        "command": "#!/bin/bash\n\n# Database backup creation script\nBACKUP_DIR=\"/backup/postgres\"\nDATE=$(date +%Y%m%d_%H%M%S)\nBACKUP_FILE=\"sbs_backup_${DATE}.sql\"\nBACKUP_PATH=\"${BACKUP_DIR}/${BACKUP_FILE}\"\n\n# Create backup directory if it doesn't exist\nmkdir -p \"$BACKUP_DIR\"\n\n# Create database backup\necho \"Creating database backup: $BACKUP_FILE\"\npg_dump -h ${DB_HOST:-postgres} -U ${DB_USER:-lifeos_app} -d ${DB_NAME:-lifeos_db} \\\n  --verbose --clean --if-exists --create \\\n  --format=custom --compress=9 \\\n  --file=\"$BACKUP_PATH\"\n\nif [ $? -eq 0 ]; then\n  # Get backup file size\n  BACKUP_SIZE=$(du -h \"$BACKUP_PATH\" | cut -f1)\n  \n  # Create backup metadata\n  cat > \"${BACKUP_PATH}.meta\" << EOF\n{\n  \"backup_file\": \"$BACKUP_FILE\",\n  \"backup_path\": \"$BACKUP_PATH\",\n  \"backup_size\": \"$BACKUP_SIZE\",\n  \"backup_date\": \"$(date -Iseconds)\",\n  \"database_name\": \"${DB_NAME:-lifeos_db}\",\n  \"backup_type\": \"full\",\n  \"compression\": \"gzip-9\",\n  \"format\": \"custom\",\n  \"pg_dump_version\": \"$(pg_dump --version | head -1)\",\n  \"status\": \"completed\"\n}\nEOF\n  \n  echo \"Backup completed successfully: $BACKUP_FILE ($BACKUP_SIZE)\"\n  echo \"BACKUP_SUCCESS:$BACKUP_FILE:$BACKUP_SIZE:$BACKUP_PATH\"\nelse\n  echo \"Backup failed\"\n  echo \"BACKUP_FAILED:$BACKUP_FILE\"\nfi"
+      },
+      "id": "5d89d51f-3e3d-42f8-a653-2bfdd9d115a5",
+      "name": "Create Database Backup",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "command": "#!/bin/bash\n\n# List available backups with metadata\nBACKUP_DIR=\"/backup/postgres\"\n\necho \"Scanning backup directory: $BACKUP_DIR\"\n\nif [ ! -d \"$BACKUP_DIR\" ]; then\n  echo \"BACKUP_LIST_ERROR:Backup directory does not exist\"\n  exit 1\nfi\n\n# Initialize JSON array for backup list\necho \"BACKUP_LIST_START\"\necho \"[\"\n\nfirst=true\nfor backup_file in \"$BACKUP_DIR\"/*.sql; do\n  if [ -f \"$backup_file\" ]; then\n    meta_file=\"${backup_file}.meta\"\n    \n    # Add comma separator for JSON array\n    if [ \"$first\" = true ]; then\n      first=false\n    else\n      echo \",\"\n    fi\n    \n    if [ -f \"$meta_file\" ]; then\n      # Use existing metadata\n      cat \"$meta_file\"\n    else\n      # Generate basic metadata for backup without meta file\n      filename=$(basename \"$backup_file\")\n      filesize=$(du -h \"$backup_file\" | cut -f1)\n      filedate=$(stat -c %y \"$backup_file\" 2>/dev/null || stat -f %Sm \"$backup_file\")\n      \n      cat << EOF\n{\n  \"backup_file\": \"$filename\",\n  \"backup_path\": \"$backup_file\",\n  \"backup_size\": \"$filesize\",\n  \"backup_date\": \"$filedate\",\n  \"database_name\": \"lifeos_db\",\n  \"backup_type\": \"full\",\n  \"format\": \"unknown\",\n  \"status\": \"available\",\n  \"has_metadata\": false\n}\nEOF\n    fi\n  fi\ndone\n\necho \"\"\necho \"]\"\necho \"BACKUP_LIST_END\""
+      },
+      "id": "4a2991f4-33ad-46ee-b7ee-6080deae79eb",
+      "name": "List Available Backups",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "command": "#!/bin/bash\n\n# Database restore script\nBACKUP_DIR=\"/backup/postgres\"\nBACKUP_FILE=\"{{ $json.backup_file }}\"\nBACKUP_PATH=\"${BACKUP_DIR}/${BACKUP_FILE}\"\nRESTORE_TYPE=\"{{ $json.restore_type || 'full' }}\"\nTARGET_DB=\"{{ $json.target_database || $env.DB_NAME }}\"\n\necho \"Starting database restore operation\"\necho \"Backup file: $BACKUP_FILE\"\necho \"Restore type: $RESTORE_TYPE\"\necho \"Target database: $TARGET_DB\"\n\n# Verify backup file exists\nif [ ! -f \"$BACKUP_PATH\" ]; then\n  echo \"RESTORE_ERROR:Backup file not found: $BACKUP_FILE\"\n  exit 1\nfi\n\n# Safety check - require confirmation for production restore\nif [ \"$TARGET_DB\" = \"lifeos_db\" ] && [ \"{{ $json.confirm_production }}\" != \"true\" ]; then\n  echo \"RESTORE_ERROR:Production restore requires confirm_production=true\"\n  exit 1\nfi\n\n# Create pre-restore backup if restoring to production\nif [ \"$TARGET_DB\" = \"lifeos_db\" ]; then\n  echo \"Creating pre-restore backup...\"\n  PRE_RESTORE_BACKUP=\"pre_restore_$(date +%Y%m%d_%H%M%S).sql\"\n  pg_dump -h ${DB_HOST:-postgres} -U ${DB_USER:-lifeos_app} -d $TARGET_DB \\\n    --format=custom --compress=9 \\\n    --file=\"${BACKUP_DIR}/${PRE_RESTORE_BACKUP}\"\n  \n  if [ $? -eq 0 ]; then\n    echo \"Pre-restore backup created: $PRE_RESTORE_BACKUP\"\n  else\n    echo \"RESTORE_ERROR:Failed to create pre-restore backup\"\n    exit 1\n  fi\nfi\n\n# Perform the restore\necho \"Restoring database from: $BACKUP_FILE\"\n\nif [ \"$RESTORE_TYPE\" = \"schema_only\" ]; then\n  # Restore schema only\n  pg_restore -h ${DB_HOST:-postgres} -U ${DB_USER:-lifeos_app} \\\n    --dbname=$TARGET_DB --schema-only --verbose \\\n    \"$BACKUP_PATH\"\nelse\n  # Full restore (default)\n  pg_restore -h ${DB_HOST:-postgres} -U ${DB_USER:-lifeos_app} \\\n    --dbname=$TARGET_DB --clean --if-exists --verbose \\\n    \"$BACKUP_PATH\"\nfi\n\nif [ $? -eq 0 ]; then\n  echo \"RESTORE_SUCCESS:$BACKUP_FILE:$TARGET_DB:$RESTORE_TYPE\"\nelse\n  echo \"RESTORE_FAILED:$BACKUP_FILE:$TARGET_DB\"\nfi"
+      },
+      "id": "da418ba9-2ba1-4729-9665-b2611f62dc5b",
+      "name": "Restore Database",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Backup and Recovery Status Analysis\nWITH database_stats AS (\n  SELECT \n    pg_size_pretty(pg_database_size(current_database())) as current_db_size,\n    pg_database_size(current_database()) as current_db_bytes,\n    (SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()) as active_connections,\n    (SELECT count(*) FROM pg_tables WHERE schemaname = 'public') as table_count,\n    now() as analysis_time\n),\nlast_backup_info AS (\n  -- This would typically come from a backup log table\n  -- For now, we'll create a placeholder structure\n  SELECT \n    'manual_check_required' as last_backup_file,\n    'unknown' as last_backup_size,\n    null::timestamp as last_backup_time,\n    'Check backup directory for actual backup files' as backup_status\n),\nrecovery_info AS (\n  SELECT \n    pg_is_in_recovery() as in_recovery_mode,\n    CASE \n      WHEN pg_is_in_recovery() THEN pg_last_wal_receive_lsn()\n      ELSE pg_current_wal_lsn()\n    END as current_wal_position,\n    pg_postmaster_start_time() as server_start_time,\n    extract(epoch from (now() - pg_postmaster_start_time())) / 3600 as uptime_hours\n),\ntable_modification_stats AS (\n  SELECT \n    schemaname,\n    tablename,\n    n_tup_ins + n_tup_upd + n_tup_del as total_modifications,\n    n_tup_ins as inserts,\n    n_tup_upd as updates,\n    n_tup_del as deletes,\n    last_autovacuum,\n    last_autoanalyze\n  FROM pg_stat_user_tables\n  WHERE schemaname = 'public'\n  ORDER BY (n_tup_ins + n_tup_upd + n_tup_del) DESC\n  LIMIT 10\n)\nSELECT \n  'backup_recovery_status' as analysis_type,\n  json_build_object(\n    'database_statistics', (\n      SELECT row_to_json(ds) FROM database_stats ds\n    ),\n    'backup_information', (\n      SELECT row_to_json(lbi) FROM last_backup_info lbi\n    ),\n    'recovery_status', (\n      SELECT row_to_json(ri) FROM recovery_info ri\n    ),\n    'table_activity', (\n      SELECT json_agg(row_to_json(tms)) FROM table_modification_stats tms\n    ),\n    'backup_recommendations', json_build_array(\n      json_build_object(\n        'priority', 'high',\n        'recommendation', 'Schedule regular automated backups',\n        'frequency', 'daily for production, weekly for development'\n      ),\n      json_build_object(\n        'priority', 'medium',\n        'recommendation', 'Test backup restoration procedures regularly',\n        'frequency', 'monthly'\n      ),\n      json_build_object(\n        'priority', 'medium',\n        'recommendation', 'Monitor database size growth for backup storage planning',\n        'action', 'Current size: ' || (SELECT current_db_size FROM database_stats)\n      )\n    ),\n    'analysis_timestamp', now()\n  ) as status_data;",
+        "options": {}
+      },
+      "id": "332d208f-1201-4c2f-a8bc-47d2d5e38e2b",
+      "name": "Get Backup Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -256,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process backup and recovery operation results\nconst webhookData = $('Webhook - Backup Manager').first().json;\nconst operation = webhookData.operation;\n\nlet results = {\n  timestamp: new Date().toISOString(),\n  operation: operation,\n  status: 'unknown',\n  details: {},\n  recommendations: []\n};\n\nif (operation === 'create_backup') {\n  const backupOutput = $input.first().json.stdout || '';\n  const backupError = $input.first().json.stderr || '';\n  \n  // Parse backup output\n  if (backupOutput.includes('BACKUP_SUCCESS:')) {\n    const successLine = backupOutput.split('\\n').find(line => line.includes('BACKUP_SUCCESS:'));\n    const [, filename, size, path] = successLine.split(':');\n    \n    results.status = 'success';\n    results.details = {\n      backup_file: filename,\n      backup_size: size,\n      backup_path: path,\n      backup_type: 'full',\n      compression: 'gzip-9',\n      format: 'custom'\n    };\n    \n    results.recommendations.push({\n      priority: 'low',\n      description: `Backup created successfully: ${filename} (${size})`,\n      action: 'Verify backup integrity and store in secure location'\n    });\n    \n  } else if (backupOutput.includes('BACKUP_FAILED:')) {\n    results.status = 'failed';\n    results.details = {\n      error_message: backupError || 'Backup creation failed',\n      output: backupOutput\n    };\n    \n    results.recommendations.push({\n      priority: 'high',\n      description: 'Backup creation failed',\n      action: 'Check database connectivity and permissions, review error logs'\n    });\n  }\n  \n} else if (operation === 'list_backups') {\n  const listOutput = $input.first().json.stdout || '';\n  \n  try {\n    // Extract JSON array from output\n    const startMarker = 'BACKUP_LIST_START';\n    const endMarker = 'BACKUP_LIST_END';\n    const startIndex = listOutput.indexOf(startMarker);\n    const endIndex = listOutput.indexOf(endMarker);\n    \n    if (startIndex !== -1 && endIndex !== -1) {\n      const jsonStr = listOutput.substring(startIndex + startMarker.length, endIndex).trim();\n      const backupList = JSON.parse(jsonStr);\n      \n      results.status = 'success';\n      results.details = {\n        total_backups: backupList.length,\n        backups: backupList,\n        total_size: backupList.reduce((sum, backup) => {\n          // Simple size calculation (would need proper parsing in production)\n          return sum + 1; // Placeholder\n        }, 0)\n      };\n      \n      if (backupList.length === 0) {\n        results.recommendations.push({\n          priority: 'high',\n          description: 'No backups found',\n          action: 'Create initial database backup immediately'\n        });\n      } else {\n        const latestBackup = backupList.sort((a, b) => new Date(b.backup_date) - new Date(a.backup_date))[0];\n        const backupAge = (new Date() - new Date(latestBackup.backup_date)) / (1000 * 60 * 60 * 24);\n        \n        if (backupAge > 7) {\n          results.recommendations.push({\n            priority: 'medium',\n            description: `Latest backup is ${Math.round(backupAge)} days old`,\n            action: 'Create fresh backup - backups should be no older than 7 days'\n          });\n        }\n      }\n    } else {\n      results.status = 'failed';\n      results.details = { error: 'Failed to parse backup list output' };\n    }\n  } catch (error) {\n    results.status = 'failed';\n    results.details = { error: `JSON parsing error: ${error.message}` };\n  }\n  \n} else if (operation === 'restore_backup') {\n  const restoreOutput = $input.first().json.stdout || '';\n  const restoreError = $input.first().json.stderr || '';\n  \n  if (restoreOutput.includes('RESTORE_SUCCESS:')) {\n    const successLine = restoreOutput.split('\\n').find(line => line.includes('RESTORE_SUCCESS:'));\n    const [, filename, targetDb, restoreType] = successLine.split(':');\n    \n    results.status = 'success';\n    results.details = {\n      restored_file: filename,\n      target_database: targetDb,\n      restore_type: restoreType,\n      restore_completed: true\n    };\n    \n    results.recommendations.push({\n      priority: 'high',\n      description: `Database restored successfully from ${filename}`,\n      action: 'Verify data integrity and restart dependent services'\n    });\n    \n  } else if (restoreOutput.includes('RESTORE_FAILED:') || restoreOutput.includes('RESTORE_ERROR:')) {\n    results.status = 'failed';\n    results.details = {\n      error_message: restoreError || 'Database restore failed',\n      output: restoreOutput\n    };\n    \n    results.recommendations.push({\n      priority: 'critical',\n      description: 'Database restore failed',\n      action: 'Check backup file integrity, database permissions, and available disk space'\n    });\n  }\n  \n} else if (operation === 'backup_status') {\n  const statusData = $input.first().json.status_data;\n  \n  results.status = 'success';\n  results.details = statusData;\n  \n  const dbStats = statusData.database_statistics;\n  const recoveryStatus = statusData.recovery_status;\n  \n  // Analyze database health\n  if (recoveryStatus.in_recovery_mode) {\n    results.recommendations.push({\n      priority: 'high',\n      description: 'Database is in recovery mode',\n      action: 'Monitor recovery progress and avoid non-essential operations'\n    });\n  }\n  \n  if (dbStats.active_connections > 150) {\n    results.recommendations.push({\n      priority: 'medium',\n      description: `High connection count: ${dbStats.active_connections}`,\n      action: 'Monitor connection usage during backup operations'\n    });\n  }\n  \n  // Add backup recommendations from the query\n  if (statusData.backup_recommendations) {\n    statusData.backup_recommendations.forEach(rec => {\n      results.recommendations.push(rec);\n    });\n  }\n}\n\nreturn { json: results };"
+      },
+      "id": "a61a1ffe-83c3-415e-b34d-ff687dced0d1",
+      "name": "Process Operation Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "3944aab8-94e0-4dc6-b70c-fc9d70918bcc",
+      "name": "Return Backup Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        192,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "create_backup",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "52d9cf01-f1e1-4413-8ba6-eb35d32961ee"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Create"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "118633cf-b71a-41dd-a537-7fe254a159f0",
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "list_backups",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "List"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "41be7bf6-101a-4332-a077-566b36de185d",
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "restore_backup",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Restore"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "736c67f6-1f08-4fe6-b6fc-7f7f5dd5fb52",
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "backup_status",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Status"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -480,
+        368
+      ],
+      "id": "e350014f-0992-4523-8b77-4077f54db6c0",
+      "name": "Switch"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Backup Manager": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Database Backup": {
+      "main": [
+        [
+          {
+            "node": "Process Operation Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Available Backups": {
+      "main": [
+        [
+          {
+            "node": "Process Operation Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Database": {
+      "main": [
+        [
+          {
+            "node": "Process Operation Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Backup Status": {
+      "main": [
+        [
+          {
+            "node": "Process Operation Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Operation Results": {
+      "main": [
+        [
+          {
+            "node": "Return Backup Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Create Database Backup",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Available Backups",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Restore Database",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Backup Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "wNssQ1MNA1dcyCIM",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

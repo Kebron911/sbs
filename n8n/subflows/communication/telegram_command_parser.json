@@ -1,0 +1,299 @@
+{
+  "name": "SUBFLOW: Telegram Command Parser",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-telegram-parser",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_telegram_parser",
+      "name": "Webhook - Telegram Parser",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "subflow-telegram-parser"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "message_text",
+              "name": "messageText",
+              "value": "={{ $json.body.message_text }}",
+              "type": "string"
+            },
+            {
+              "id": "user_id",
+              "name": "userId",
+              "value": "={{ $json.body.user_id }}",
+              "type": "number"
+            },
+            {
+              "id": "telegram_user_id",
+              "name": "telegramUserId",
+              "value": "={{ $json.body.telegram_user_id }}",
+              "type": "number"
+            },
+            {
+              "id": "chat_id",
+              "name": "chatId",
+              "value": "={{ $json.body.chat_id }}",
+              "type": "number"
+            },
+            {
+              "id": "include_help",
+              "name": "includeHelp",
+              "value": "={{ $json.body.include_help !== false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_parser_data",
+      "name": "Prepare Parser Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Telegram command and extract components\nconst messageText = $json.messageText || '';\nconst trimmedText = messageText.trim();\n\n// Command parsing logic\nfunction parseCommand(text) {\n  // Check if message starts with command indicator\n  if (!text.startsWith('/')) {\n    return {\n      is_command: false,\n      raw_text: text,\n      command: null,\n      subcommand: null,\n      arguments: [],\n      full_args_string: text\n    };\n  }\n\n  // Split by spaces and filter empty strings\n  const parts = text.split(' ').filter(part => part.length > 0);\n  const commandPart = parts[0].substring(1); // Remove leading '/'\n  \n  // Handle bot name suffix (e.g., /start@mybotname)\n  const commandBase = commandPart.split('@')[0];\n  \n  // Extract subcommand and arguments\n  const args = parts.slice(1);\n  let subcommand = null;\n  let finalArgs = args;\n  \n  // Check if first argument is a subcommand (no special characters)\n  if (args.length > 0 && !args[0].includes('=') && !args[0].includes(':')) {\n    // Common subcommands\n    const commonSubcommands = ['add', 'remove', 'list', 'get', 'set', 'update', 'delete', 'help', 'status', 'start', 'stop', 'check', 'complete', 'view', 'edit', 'create'];\n    if (commonSubcommands.includes(args[0].toLowerCase())) {\n      subcommand = args[0].toLowerCase();\n      finalArgs = args.slice(1);\n    }\n  }\n  \n  return {\n    is_command: true,\n    raw_text: text,\n    command: commandBase.toLowerCase(),\n    subcommand: subcommand,\n    arguments: finalArgs,\n    full_args_string: finalArgs.join(' ')\n  };\n}\n\n// Parse key-value arguments\nfunction parseKeyValueArgs(args) {\n  const keyValuePairs = {};\n  const positionalArgs = [];\n  \n  args.forEach(arg => {\n    if (arg.includes('=')) {\n      const [key, ...valueParts] = arg.split('=');\n      keyValuePairs[key] = valueParts.join('=');\n    } else if (arg.includes(':')) {\n      const [key, ...valueParts] = arg.split(':');\n      keyValuePairs[key] = valueParts.join(':');\n    } else {\n      positionalArgs.push(arg);\n    }\n  });\n  \n  return {\n    key_value_pairs: keyValuePairs,\n    positional_args: positionalArgs\n  };\n}\n\n// Main parsing\nconst parsed = parseCommand(trimmedText);\nconst argAnalysis = parseKeyValueArgs(parsed.arguments);\n\n// Command categorization\nconst commandCategories = {\n  character: ['character', 'char', 'level', 'xp', 'stats'],\n  skills: ['skill', 'skills', 'learn'],\n  habits: ['habit', 'habits', 'track'],\n  systems: ['system', 'systems', 'workflow'],\n  routines: ['routine', 'routines', 'schedule'],\n  achievements: ['achievement', 'achievements', 'unlock'],\n  help: ['help', 'info', 'about', 'commands'],\n  general: ['start', 'stop', 'status', 'ping', 'hello']\n};\n\nfunction categorizeCommand(command) {\n  for (const [category, commands] of Object.entries(commandCategories)) {\n    if (commands.includes(command)) {\n      return category;\n    }\n  }\n  return 'unknown';\n}\n\n// Build result object\nconst result = {\n  parsing: {\n    success: true,\n    is_command: parsed.is_command,\n    raw_message: messageText,\n    cleaned_text: trimmedText\n  },\n  command: {\n    base: parsed.command,\n    subcommand: parsed.subcommand,\n    category: parsed.is_command ? categorizeCommand(parsed.command) : null,\n    full_command: parsed.is_command ? `/${parsed.command}${parsed.subcommand ? ' ' + parsed.subcommand : ''}` : null\n  },\n  arguments: {\n    raw_args: parsed.arguments,\n    args_string: parsed.full_args_string,\n    key_value_pairs: argAnalysis.key_value_pairs,\n    positional_args: argAnalysis.positional_args,\n    arg_count: parsed.arguments.length\n  },\n  context: {\n    user_id: $json.userId,\n    telegram_user_id: $json.telegramUserId,\n    chat_id: $json.chatId,\n    timestamp: new Date().toISOString()\n  },\n  routing: {\n    suggested_workflow: null,\n    requires_character_lookup: false,\n    requires_authentication: false\n  }\n};\n\n// Add routing suggestions based on command\nif (parsed.is_command) {\n  const command = parsed.command;\n  const subcommand = parsed.subcommand;\n  \n  // Suggest workflow routing\n  if (command === 'character' || command === 'char') {\n    result.routing.suggested_workflow = 'character_management';\n    result.routing.requires_character_lookup = true;\n  } else if (command === 'skill' || command === 'skills') {\n    result.routing.suggested_workflow = 'skill_management';\n    result.routing.requires_character_lookup = true;\n  } else if (command === 'habit' || command === 'habits') {\n    result.routing.suggested_workflow = 'habit_management';\n    result.routing.requires_character_lookup = true;\n  } else if (command === 'system' || command === 'systems') {\n    result.routing.suggested_workflow = 'system_management';\n    result.routing.requires_authentication = true;\n  } else if (command === 'routine' || command === 'routines') {\n    result.routing.suggested_workflow = 'routine_management';\n    result.routing.requires_authentication = true;\n  } else if (command === 'help') {\n    result.routing.suggested_workflow = 'help_system';\n  } else if (command === 'start') {\n    result.routing.suggested_workflow = 'user_onboarding';\n    result.routing.requires_authentication = true;\n  }\n  \n  // Add specific action suggestions\n  if (subcommand) {\n    result.routing.suggested_action = subcommand;\n    \n    // Common action patterns\n    if (['add', 'create', 'new'].includes(subcommand)) {\n      result.routing.action_type = 'create';\n    } else if (['remove', 'delete', 'del'].includes(subcommand)) {\n      result.routing.action_type = 'delete';\n    } else if (['list', 'show', 'get', 'view'].includes(subcommand)) {\n      result.routing.action_type = 'read';\n    } else if (['update', 'edit', 'set', 'modify'].includes(subcommand)) {\n      result.routing.action_type = 'update';\n    } else if (['complete', 'done', 'finish'].includes(subcommand)) {\n      result.routing.action_type = 'complete';\n    }\n  }\n}\n\nreturn {\n  json: result\n};"
+      },
+      "id": "parse_telegram_command",
+      "name": "Parse Telegram Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_help_request",
+              "leftValue": "={{ $json.command.base }}",
+              "rightValue": "help",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check_help_request",
+      "name": "Check Help Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate help content based on command context\nconst parsedCommand = $json;\nconst includeHelp = $('Prepare Parser Data').item.json.includeHelp;\n\n// Command help database\nconst commandHelp = {\n  character: {\n    description: \"Manage your SBS character\",\n    usage: \"/character [subcommand] [options]\",\n    subcommands: {\n      status: \"View character stats and level\",\n      level: \"Check current level and XP\",\n      stats: \"View detailed character statistics\"\n    },\n    examples: [\n      \"/character status - View your character overview\",\n      \"/character level - Check your current level\"\n    ]\n  },\n  skill: {\n    description: \"Manage character skills\",\n    usage: \"/skill [subcommand] [skill_name]\",\n    subcommands: {\n      list: \"List all your skills\",\n      add: \"Add a new skill\",\n      level: \"Check skill level and XP\",\n      practice: \"Log skill practice session\"\n    },\n    examples: [\n      \"/skill list - Show all your skills\",\n      \"/skill add Programming - Add a new Programming skill\",\n      \"/skill level Programming - Check Programming skill level\"\n    ]\n  },\n  habit: {\n    description: \"Track and manage habits\",\n    usage: \"/habit [subcommand] [habit_name]\",\n    subcommands: {\n      list: \"List all your habits\",\n      add: \"Add a new habit\",\n      complete: \"Mark habit as completed for today\",\n      streak: \"Check habit streak\"\n    },\n    examples: [\n      \"/habit list - Show all your habits\",\n      \"/habit add Exercise - Add a new Exercise habit\",\n      \"/habit complete Exercise - Mark Exercise as done today\"\n    ]\n  },\n  system: {\n    description: \"Manage your SBS systems\",\n    usage: \"/system [subcommand] [system_name]\",\n    subcommands: {\n      list: \"List all your systems\",\n      status: \"Check system status and stage\",\n      advance: \"Advance system to next stage\"\n    },\n    examples: [\n      \"/system list - Show all your systems\",\n      \"/system status Morning Routine - Check system status\"\n    ]\n  },\n  routine: {\n    description: \"Manage system routines\",\n    usage: \"/routine [subcommand] [routine_name]\",\n    subcommands: {\n      list: \"List all routines\",\n      complete: \"Mark routine as completed\",\n      status: \"Check routine status and streak\"\n    },\n    examples: [\n      \"/routine list - Show all your routines\",\n      \"/routine complete Morning Workout - Mark routine complete\"\n    ]\n  }\n};\n\n// Generate help response\nlet helpContent = \"\";\n\nif (parsedCommand.command.base === 'help') {\n  const requestedCommand = parsedCommand.arguments.positional_args[0];\n  \n  if (requestedCommand && commandHelp[requestedCommand]) {\n    // Specific command help\n    const cmdHelp = commandHelp[requestedCommand];\n    helpContent = `📚 Help for /${requestedCommand}\\n\\n`;\n    helpContent += `${cmdHelp.description}\\n\\n`;\n    helpContent += `**Usage:** ${cmdHelp.usage}\\n\\n`;\n    \n    if (cmdHelp.subcommands && Object.keys(cmdHelp.subcommands).length > 0) {\n      helpContent += `**Subcommands:**\\n`;\n      Object.entries(cmdHelp.subcommands).forEach(([sub, desc]) => {\n        helpContent += `• ${sub} - ${desc}\\n`;\n      });\n      helpContent += `\\n`;\n    }\n    \n    if (cmdHelp.examples && cmdHelp.examples.length > 0) {\n      helpContent += `**Examples:**\\n`;\n      cmdHelp.examples.forEach(example => {\n        helpContent += `${example}\\n`;\n      });\n    }\n  } else {\n    // General help\n    helpContent = `🤖 SBS Bot Commands\\n\\n`;\n    helpContent += `**Available Commands:**\\n\\n`;\n    \n    Object.entries(commandHelp).forEach(([cmd, info]) => {\n      helpContent += `/${cmd} - ${info.description}\\n`;\n    });\n    \n    helpContent += `\\n**Need help with a specific command?**\\n`;\n    helpContent += `Use: /help [command_name]\\n\\n`;\n    helpContent += `**Examples:**\\n`;\n    helpContent += `/help character - Get help with character commands\\n`;\n    helpContent += `/help skill - Get help with skill commands`;\n  }\n} else if (includeHelp && parsedCommand.command.category !== 'unknown') {\n  // Auto-suggest help for recognized commands\n  const category = parsedCommand.command.category;\n  if (commandHelp[category]) {\n    helpContent = `💡 Quick help for /${category}:\\n`;\n    helpContent += commandHelp[category].description + `\\n`;\n    helpContent += `Use /help ${category} for full documentation.`;\n  }\n}\n\n// Add help content to result\nconst result = {\n  ...parsedCommand,\n  help: {\n    requested: parsedCommand.command.base === 'help',\n    content: helpContent,\n    has_content: helpContent.length > 0,\n    suggested_command: parsedCommand.command.category !== 'unknown' ? parsedCommand.command.category : null\n  }\n};\n\nreturn {\n  json: result\n};"
+      },
+      "id": "generate_help_content",
+      "name": "Generate Help Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should_validate_user",
+              "leftValue": "={{ $json.routing.requires_authentication }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check_requires_auth",
+      "name": "Check Requires Auth",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT u.id as user_id, u.telegram_user_id, c.id as character_id \nFROM users u \nLEFT JOIN characters c ON u.id = c.user_id \nWHERE u.telegram_user_id = {{ $json.context.telegram_user_id }};",
+        "additionalFields": {
+          "mode": "single"
+        }
+      },
+      "id": "lookup_user_character",
+      "name": "Lookup User & Character",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1250, 200],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Finalize parsing result with user/character context\nconst parsingResult = $('Generate Help Content').item.json || $('Parse Telegram Command').item.json;\nconst userLookup = $('Lookup User & Character').all().length > 0 ? $('Lookup User & Character').item.json : null;\n\n// Build final comprehensive result\nconst finalResult = {\n  ...parsingResult,\n  user_context: {\n    authenticated: userLookup !== null,\n    user_id: userLookup?.user_id || null,\n    character_id: userLookup?.character_id || null,\n    has_character: userLookup?.character_id !== null,\n    telegram_user_id: parsingResult.context.telegram_user_id\n  },\n  validation: {\n    can_execute: true,\n    validation_errors: [],\n    missing_requirements: []\n  },\n  execution_plan: {\n    next_workflow: parsingResult.routing.suggested_workflow,\n    next_action: parsingResult.routing.suggested_action,\n    parameters: {\n      command: parsingResult.command.base,\n      subcommand: parsingResult.command.subcommand,\n      args: parsingResult.arguments.positional_args,\n      key_value_args: parsingResult.arguments.key_value_pairs\n    }\n  }\n};\n\n// Validate execution requirements\nif (parsingResult.routing.requires_authentication && !userLookup) {\n  finalResult.validation.can_execute = false;\n  finalResult.validation.validation_errors.push(\"User not found or not registered\");\n  finalResult.validation.missing_requirements.push(\"user_registration\");\n}\n\nif (parsingResult.routing.requires_character_lookup && userLookup && !userLookup.character_id) {\n  finalResult.validation.can_execute = false;\n  finalResult.validation.validation_errors.push(\"Character not found - please create a character first\");\n  finalResult.validation.missing_requirements.push(\"character_creation\");\n}\n\n// Add success indicators\nfinalResult.parsing.complete = true;\nfinalResult.parsing.timestamp = new Date().toISOString();\n\nreturn {\n  json: finalResult\n};"
+      },
+      "id": "finalize_parsing_result",
+      "name": "Finalize Parsing Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"data\": $json,\n  \"message\": \"Command parsed successfully\"\n} }}",
+        "options": {}
+      },
+      "id": "send_parsing_success",
+      "name": "Send Parsing Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Telegram Parser": {
+      "main": [
+        [
+          {
+            "node": "Prepare Parser Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Parser Data": {
+      "main": [
+        [
+          {
+            "node": "Parse Telegram Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Telegram Command": {
+      "main": [
+        [
+          {
+            "node": "Check Help Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Requires Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Help Request": {
+      "main": [
+        [
+          {
+            "node": "Generate Help Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Requires Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Help Content": {
+      "main": [
+        [
+          {
+            "node": "Finalize Parsing Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Requires Auth": {
+      "main": [
+        [
+          {
+            "node": "Lookup User & Character",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Parsing Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup User & Character": {
+      "main": [
+        [
+          {
+            "node": "Finalize Parsing Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Parsing Result": {
+      "main": [
+        [
+          {
+            "node": "Send Parsing Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "versionId": "subflow-telegram-parser-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "subflow-telegram-parser",
+  "tags": ["subflow", "telegram", "command-parser", "bot", "reusable"]
+}

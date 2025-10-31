@@ -1,0 +1,16 @@
+# SBS Health Check Requirements
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+requests>=2.28.0
+psycopg2-binary>=2.9.0
+python-dotenv>=1.0.0
+colorama>=0.4.6
+
+# Optional dependencies for enhanced functionality
+docker>=6.0.0          # For Docker service monitoring
+psutil>=5.9.0          # For system resource monitoring
+
+# Development and testing
+pytest>=7.0.0          # For running tests
+pytest-cov>=4.0.0     # For coverage reporting

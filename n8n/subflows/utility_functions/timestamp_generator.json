@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "instanceId": "subflow-timestamp-generator"
+  },
+  "name": "SUBFLOW: Timestamp Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "subflow-timestamp-generator",
+        "options": {}
+      },
+      "id": "webhook_timestamp_generator",
+      "name": "Webhook - Timestamp Generator",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "subflow-timestamp-generator"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Timestamp Generation Engine\nconst requestData = $json;\nconst timestampType = requestData.timestamp_type || 'iso'; // iso, unix, custom, sql, relative\nconst timezone = requestData.timezone || 'UTC';\nconst format = requestData.format || null;\nconst offset = requestData.offset || 0; // offset in minutes\nconst baseDate = requestData.base_date || null; // custom base date\n\n// Create base date object\nlet targetDate;\nif (baseDate) {\n  targetDate = new Date(baseDate);\n} else {\n  targetDate = new Date();\n}\n\n// Apply offset if provided\nif (offset !== 0) {\n  targetDate.setMinutes(targetDate.getMinutes() + offset);\n}\n\n// Generate different timestamp formats\nconst timestamps = {\n  iso: targetDate.toISOString(),\n  iso_date: targetDate.toISOString().split('T')[0],\n  iso_time: targetDate.toISOString().split('T')[1].split('.')[0],\n  unix: Math.floor(targetDate.getTime() / 1000),\n  unix_ms: targetDate.getTime(),\n  sql: targetDate.toISOString().replace('T', ' ').replace('Z', ''),\n  date_only: targetDate.toISOString().split('T')[0],\n  time_only: targetDate.toTimeString().split(' ')[0],\n  readable: targetDate.toLocaleString('en-US', { timeZone: timezone }),\n  utc_string: targetDate.toUTCString(),\n  year: targetDate.getFullYear(),\n  month: targetDate.getMonth() + 1,\n  day: targetDate.getDate(),\n  hour: targetDate.getHours(),\n  minute: targetDate.getMinutes(),\n  second: targetDate.getSeconds(),\n  millisecond: targetDate.getMilliseconds(),\n  day_of_week: targetDate.getDay(),\n  day_of_year: Math.floor((targetDate - new Date(targetDate.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24)),\n  week_of_year: Math.ceil(((targetDate - new Date(targetDate.getFullYear(), 0, 1)) / 86400000 + new Date(targetDate.getFullYear(), 0, 1).getDay() + 1) / 7)\n};\n\n// Generate relative timestamps\nconst now = new Date();\nconst diffMs = targetDate.getTime() - now.getTime();\nconst diffMinutes = Math.floor(diffMs / (1000 * 60));\nconst diffHours = Math.floor(diffMs / (1000 * 60 * 60));\nconst diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));\n\nlet relativeTime = '';\nif (Math.abs(diffDays) >= 1) {\n  relativeTime = diffDays > 0 ? `in ${diffDays} days` : `${Math.abs(diffDays)} days ago`;\n} else if (Math.abs(diffHours) >= 1) {\n  relativeTime = diffHours > 0 ? `in ${diffHours} hours` : `${Math.abs(diffHours)} hours ago`;\n} else if (Math.abs(diffMinutes) >= 1) {\n  relativeTime = diffMinutes > 0 ? `in ${diffMinutes} minutes` : `${Math.abs(diffMinutes)} minutes ago`;\n} else {\n  relativeTime = 'just now';\n}\n\ntimestamps.relative = relativeTime;\n\n// Custom format handling\nif (format) {\n  try {\n    // Simple custom format patterns\n    let customFormat = format\n      .replace(/YYYY/g, targetDate.getFullYear())\n      .replace(/MM/g, String(targetDate.getMonth() + 1).padStart(2, '0'))\n      .replace(/DD/g, String(targetDate.getDate()).padStart(2, '0'))\n      .replace(/HH/g, String(targetDate.getHours()).padStart(2, '0'))\n      .replace(/mm/g, String(targetDate.getMinutes()).padStart(2, '0'))\n      .replace(/ss/g, String(targetDate.getSeconds()).padStart(2, '0'));\n    \n    timestamps.custom = customFormat;\n  } catch (error) {\n    timestamps.custom = targetDate.toISOString();\n  }\n}\n\n// Calculate useful date boundaries\nconst startOfDay = new Date(targetDate);\nstartOfDay.setHours(0, 0, 0, 0);\n\nconst endOfDay = new Date(targetDate);\nendOfDay.setHours(23, 59, 59, 999);\n\nconst startOfWeek = new Date(targetDate);\nstartOfWeek.setDate(targetDate.getDate() - targetDate.getDay());\nstartOfWeek.setHours(0, 0, 0, 0);\n\nconst endOfWeek = new Date(startOfWeek);\nendOfWeek.setDate(startOfWeek.getDate() + 6);\nendOfWeek.setHours(23, 59, 59, 999);\n\nconst startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);\nconst endOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59, 999);\n\n// Add date boundaries\ntimestamps.boundaries = {\n  start_of_day: startOfDay.toISOString(),\n  end_of_day: endOfDay.toISOString(),\n  start_of_week: startOfWeek.toISOString(),\n  end_of_week: endOfWeek.toISOString(),\n  start_of_month: startOfMonth.toISOString(),\n  end_of_month: endOfMonth.toISOString()\n};\n\n// Determine primary timestamp based on type\nlet primaryTimestamp;\nswitch (timestampType) {\n  case 'unix':\n    primaryTimestamp = timestamps.unix;\n    break;\n  case 'sql':\n    primaryTimestamp = timestamps.sql;\n    break;\n  case 'relative':\n    primaryTimestamp = timestamps.relative;\n    break;\n  case 'custom':\n    primaryTimestamp = timestamps.custom || timestamps.iso;\n    break;\n  default:\n    primaryTimestamp = timestamps.iso;\n}\n\n// Generate common database-ready formats\nconst databaseFormats = {\n  postgres: timestamps.iso,\n  mysql: timestamps.sql,\n  sqlite: timestamps.iso,\n  created_at: timestamps.iso,\n  updated_at: timestamps.iso\n};\n\n// Build comprehensive response\nconst response = {\n  success: true,\n  primary_timestamp: primaryTimestamp,\n  timestamp_type: timestampType,\n  timezone: timezone,\n  offset_minutes: offset,\n  all_formats: timestamps,\n  database_formats: databaseFormats,\n  metadata: {\n    base_date_provided: baseDate !== null,\n    offset_applied: offset !== 0,\n    custom_format_provided: format !== null,\n    generated_at: new Date().toISOString()\n  },\n  utility: {\n    is_past: targetDate < now,\n    is_future: targetDate > now,\n    is_today: timestamps.date_only === new Date().toISOString().split('T')[0],\n    is_weekend: targetDate.getDay() === 0 || targetDate.getDay() === 6,\n    quarter: Math.floor((targetDate.getMonth() + 3) / 3),\n    days_until_end_of_month: new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate() - targetDate.getDate(),\n    is_leap_year: (targetDate.getFullYear() % 4 === 0 && targetDate.getFullYear() % 100 !== 0) || (targetDate.getFullYear() % 400 === 0)\n  }\n};\n\nreturn {\n  json: response\n};"
+      },
+      "id": "generate_timestamps",
+      "name": "Generate Timestamps",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "send_timestamp_response",
+      "name": "Send Timestamp Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        400,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Timestamp Generator": {
+      "main": [
+        [
+          {
+            "node": "Generate Timestamps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Timestamps": {
+      "main": [
+        [
+          {
+            "node": "Send Timestamp Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": true,
+  "versionId": "1",
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

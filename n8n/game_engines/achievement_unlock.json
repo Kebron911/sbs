@@ -1,0 +1,403 @@
+{
+  "name": "SBS Achievement System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "check-achievements",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-sbs-achievements",
+      "name": "Webhook - SBS Achievements",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        100,
+        200
+      ],
+      "webhookId": "sbs-achievement-check"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-data",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $json.body.character_id,\n  \"include_skills\": true,\n  \"include_habits\": true,\n  \"include_systems\": true,\n  \"include_achievements\": true\n} }}",
+        "options": {}
+      },
+      "id": "fetch-character-stats",
+      "name": "Fetch Character Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"SELECT title FROM achievements WHERE character_id = $1\",\n  \"parameters\": [$json.body.character_id],\n  \"return_first_only\": false\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch-existing-achievements",
+      "name": "Fetch Existing Achievements (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// SBS-Focused Achievement System using comprehensive character data\nconst response = $('Fetch Character Stats').first().json.data;\nconst characterStats = response.character;\nconst skillStats = response.stats.skills;\nconst habitStats = response.stats.habits;\nconst sbsStats = response.stats.systems;\nconst routineStats = response.stats.routines;\nconst existingAchievements = $('Fetch Existing Achievements (Subflow)').all().map(a => a.json.data ? a.json.data.title : a.json.title);\n\n// Map wealth stats (keeping for compatibility, defaulting to 0)\nconst wealthStats = { total_winnings: 0 };\n\n// SBS-Driven Achievement Definitions\nconst achievementDefinitions = [\n  // Core SBS System Building\n  { title: 'SBS Pioneer', condition: sbsStats.total >= 1, reward_type: 'xp', bonus_value: 200, description: 'Built your first Self-Building System' },\n  { title: 'Life Systems Architect', condition: sbsStats.total >= 3, reward_type: 'coins', bonus_value: 500, description: 'Architected 3 comprehensive SBS systems' },\n  { title: 'Master Life Engineer', condition: sbsStats.total >= 5, reward_type: 'coins', bonus_value: 1500, description: 'Engineered 5 integrated SBS systems' },\n  { title: 'SBS System Completionist', condition: sbsStats.completed >= 1, reward_type: 'xp', bonus_value: 500, description: 'Completed a full SBS system lifecycle' },\n  { title: 'Life Mastery Expert', condition: sbsStats.completed >= 3, reward_type: 'coins', bonus_value: 1000, description: 'Achieved mastery across 3 complete SBS systems' },\n  \n  // SBS-Generated Skills Achievements\n  { title: 'SBS Skill Generator', condition: skillStats.sbs_generated >= 2, reward_type: 'xp', bonus_value: 250, description: 'SBS systems auto-generated 2+ skills' },\n  { title: 'System-Driven Expertise', condition: skillStats.sbs_generated >= 3 && skillStats.level5_plus >= 2, reward_type: 'coins', bonus_value: 600, description: 'SBS-generated skills reached level 5+ through system progression' },\n  { title: 'Multi-Domain SBS Master', condition: skillStats.sbs_generated >= 5 && skillStats.level5_plus >= 3, reward_type: 'coins', bonus_value: 1200, description: 'SBS systems generated skills across multiple life domains' },\n  { title: 'SBS Expert Developer', condition: sbsStats.completed >= 1 && skillStats.level10_plus >= 1, reward_type: 'coins', bonus_value: 1500, description: 'SBS system completion drove expert-level skill development' },\n  \n  // SBS-Generated Habits Achievements\n  { title: 'SBS Habit Creator', condition: habitStats.sbs_generated >= 3, reward_type: 'xp', bonus_value: 300, description: 'SBS systems auto-generated 3+ habits' },\n  { title: 'Systematic Habit Builder', condition: habitStats.sbs_generated >= 5 && habitStats.max_streak >= 14, reward_type: 'coins', bonus_value: 750, description: 'SBS-generated habits maintained for 2+ weeks' },\n  { title: 'SBS Habit Master', condition: habitStats.sbs_generated >= 10 && habitStats.month_streaks >= 2, reward_type: 'coins', bonus_value: 1200, description: 'Built 10+ habits through systematic SBS development' },\n  { title: 'Habit Evolution Engine', condition: routineStats.total >= 10 && habitStats.max_streak >= 30, reward_type: 'coins', bonus_value: 2000, description: 'SBS routines evolved into 30+ day habit streaks' },\n  \n  // Integrated SBS Achievements\n  { title: 'SBS Integration Pioneer', condition: skillStats.sbs_generated >= 2 && habitStats.sbs_generated >= 3, reward_type: 'coins', bonus_value: 800, description: 'SBS systems successfully generating both skills and habits' },\n  { title: 'Holistic SBS Engineer', condition: skillStats.sbs_generated >= 3 && habitStats.sbs_generated >= 5 && skillStats.level5_plus >= 2, reward_type: 'coins', bonus_value: 1800, description: 'SBS systems driving comprehensive skill and habit development' },\n  { title: 'Life Systems Master', condition: sbsStats.completed >= 2 && skillStats.sbs_generated >= 5 && habitStats.month_streaks >= 2, reward_type: 'coins', bonus_value: 2500, description: 'Master of SBS: Complete systems generating lasting skills and habits' },\n  \n  // SBS Stage Progression\n  { title: 'SBS Design Thinker', condition: sbsStats.max_stage_reached >= 2, reward_type: 'xp', bonus_value: 150, description: 'Advanced SBS systems to Design stage' },\n  { title: 'SBS Builder', condition: sbsStats.max_stage_reached >= 3, reward_type: 'xp', bonus_value: 250, description: 'Advanced SBS systems to Build stage' },\n  { title: 'SBS Automation Expert', condition: sbsStats.max_stage_reached >= 4, reward_type: 'coins', bonus_value: 400, description: 'Advanced SBS systems to Automate stage' },\n  { title: 'SBS System Sage', condition: sbsStats.max_stage_reached >= 5, reward_type: 'coins', bonus_value: 1000, description: 'Advanced SBS systems to Review stage - full lifecycle mastery' },\n  \n  // SBS Routine Mastery\n  { title: 'SBS Routine Builder', condition: routineStats.total >= 5, reward_type: 'xp', bonus_value: 200, description: 'Built 5+ routines through SBS development' },\n  { title: 'SBS Automation Architect', condition: routineStats.automated >= 3, reward_type: 'coins', bonus_value: 500, description: 'Automated 3+ routines through SBS progression' },\n  { title: 'Systematic Living Master', condition: routineStats.automated >= 5 && habitStats.max_streak >= 21, reward_type: 'coins', bonus_value: 1000, description: 'Achieved systematic living: 5+ automated routines with 3+ week streaks' },\n  \n  // Character Level Achievements (Enhanced)\n  { title: 'SBS-Powered Growth', condition: characterStats.level >= 10 && sbsStats.total >= 2, reward_type: 'xp', bonus_value: 300, description: 'Reached Level 10 through systematic SBS development' },\n  { title: 'Systems-Driven Master', condition: characterStats.level >= 25 && sbsStats.completed >= 1, reward_type: 'coins', bonus_value: 1000, description: 'Reached Level 25 with completed SBS systems' },\n  { title: 'Legendary Life Engineer', condition: characterStats.level >= 50 && sbsStats.completed >= 3, reward_type: 'coins', bonus_value: 5000, description: 'Reached Level 50 as a master of life systems' },\n  \n  // Special SBS Achievements\n  { title: 'Balanced SBS Engineer', condition: skillStats.sbs_generated >= 3 && habitStats.sbs_generated >= 3 && sbsStats.total >= 2, reward_type: 'coins', bonus_value: 1500, description: 'Engineered balanced life: SBS systems generating diverse skills and habits' },\n  { title: 'SBS Renaissance', condition: sbsStats.total >= 5 && skillStats.level5_plus >= 5 && habitStats.month_streaks >= 3, reward_type: 'coins', bonus_value: 3000, description: 'Renaissance achievement: Multiple SBS systems with sustained excellence' }\n];\n\n// Check for new achievements\nconst newAchievements = achievementDefinitions.filter(achievement => {\n  return achievement.condition && !existingAchievements.includes(achievement.title);\n});\n\nif (newAchievements.length === 0) {\n  return [{ json: { hasNewAchievements: false, message: 'No new SBS achievements unlocked' } }];\n}\n\nreturn newAchievements.map(achievement => ({\n  json: {\n    characterId: characterStats.id,\n    hasNewAchievements: true,\n    ...achievement\n  }\n}));"
+      },
+      "id": "check-sbs-achievements",
+      "name": "Check SBS Achievement Criteria",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasNewAchievements }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "has-new-sbs-achievements",
+      "name": "Has New SBS Achievements?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"INSERT INTO achievements (character_id, title, description, reward_type, bonus_value) VALUES ($1, $2, $3, $4, $5) RETURNING *\",\n  \"parameters\": [\n    $json.characterId,\n    $json.title,\n    $json.description,\n    $json.reward_type,\n    $json.bonus_value\n  ],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "insert-sbs-achievement",
+      "name": "Insert SBS Achievement (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-ai-content-generation",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"content_type\": \"achievement_description\",\n  \"character_id\": $json.characterId,\n  \"context\": {\n    \"achievement_title\": $json.title,\n    \"achievement_category\": \"SBS System Building\",\n    \"reward_type\": $json.reward_type,\n    \"bonus_value\": $json.bonus_value,\n    \"base_description\": $json.description,\n    \"character_stats\": \"Level \" + $('Fetch Character Stats').first().json.level + \" SBS practitioner\"\n  }\n} }}",
+        "options": {}
+      },
+      "id": "enhance_achievement_description",
+      "name": "Enhance Achievement Description",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1950,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI-enhanced achievement description\nconst originalData = $('Check SBS Achievement Criteria').item.json;\nconst aiResponse = $json;\n\n// Try to parse AI response, fallback to original description if AI fails\nlet enhancedDescription = originalData.description;\ntry {\n  if (aiResponse.content && typeof aiResponse.content === 'string') {\n    const parsedContent = JSON.parse(aiResponse.content);\n    if (parsedContent.description && parsedContent.description.length > 10) {\n      enhancedDescription = parsedContent.description;\n    }\n  }\n} catch (error) {\n  // Fallback to original description\n  console.log('AI description enhancement failed, using original:', error.message);\n}\n\nreturn {\n  json: {\n    ...originalData,\n    description: enhancedDescription,\n    ai_enhanced: enhancedDescription !== originalData.description\n  }\n};"
+      },
+      "id": "process_ai_description",
+      "name": "Process AI Description",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-progression",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $json.characterId,\n  \"xpGained\": $json.reward_type === 'xp' ? $json.bonus_value : 0,\n  \"coinsGained\": $json.reward_type === 'coins' ? $json.bonus_value : 0,\n  \"source\": \"achievement_unlock\"\n} }}",
+        "options": {}
+      },
+      "id": "apply-sbs-reward",
+      "name": "Apply SBS Achievement Reward",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2250,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $json.characterId,\n  \"event_type\": \"sbs_achievement_unlocked\",\n  \"xp_change\": $json.reward_type === 'xp' ? $json.bonus_value : 0,\n  \"coins_change\": $json.reward_type === 'coins' ? $json.bonus_value : 0,\n  \"description\": $json.description + ($json.ai_enhanced ? \" (AI Enhanced)\" : \"\")\n} }}",
+        "options": {}
+      },
+      "id": "log-sbs-event",
+      "name": "Log SBS Achievement Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2.4,
+      "position": [
+        2300,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "sbs_achievements"
+      },
+      "id": "aggregate-sbs-achievements",
+      "name": "Aggregate SBS Achievements",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"newSbsAchievements\": $json.sbs_achievements || [],\n  \"count\": ($json.sbs_achievements || []).length,\n  \"message\": \"Congratulations! You've unlocked new SBS achievements!\",\n  \"achievementType\": \"sbs_focused\"\n} }}"
+      },
+      "id": "respond-sbs-achievements",
+      "name": "Respond SBS Achievements",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"success\": true, \"newSbsAchievements\": [], \"count\": 0, \"message\": \"No new SBS achievements at this time\", \"achievementType\": \"sbs_focused\"} }}"
+      },
+      "id": "respond-no-sbs-achievements",
+      "name": "Respond No SBS Achievements",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1900,
+        300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - SBS Achievements": {
+      "main": [
+        [
+          {
+            "node": "Fetch Character Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Character Stats": {
+      "main": [
+        [
+          {
+            "node": "Fetch SBS Skill Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch SBS Skill Stats": {
+      "main": [
+        [
+          {
+            "node": "Fetch SBS Habit Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch SBS Habit Stats": {
+      "main": [
+        [
+          {
+            "node": "Fetch Wealth Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Wealth Stats": {
+      "main": [
+        [
+          {
+            "node": "Fetch SBS System Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch SBS System Stats": {
+      "main": [
+        [
+          {
+            "node": "Fetch Existing Achievements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Existing Achievements": {
+      "main": [
+        [
+          {
+            "node": "Check SBS Achievement Criteria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check SBS Achievement Criteria": {
+      "main": [
+        [
+          {
+            "node": "Has New SBS Achievements?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New SBS Achievements?": {
+      "main": [
+        [
+          {
+            "node": "Insert SBS Achievement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond No SBS Achievements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert SBS Achievement": {
+      "main": [
+        [
+          {
+            "node": "Apply SBS Achievement Reward",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply SBS Achievement Reward": {
+      "main": [
+        [
+          {
+            "node": "Log SBS Achievement Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log SBS Achievement Event": {
+      "main": [
+        [
+          {
+            "node": "Aggregate SBS Achievements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate SBS Achievements": {
+      "main": [
+        [
+          {
+            "node": "Respond SBS Achievements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "sbs-integration-system"
+  },
+  "id": "SBSAchievementSystem",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T16:26:10.000Z",
+  "createdAt": "2025-10-30T16:26:10.000Z"
+}

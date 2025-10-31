@@ -1,0 +1,242 @@
+{
+  "name": "Error Response Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-error-handler",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_error_handler",
+      "name": "Webhook - Error Handler",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-error-handler"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Error Response Handler\nconst errorData = $json;\nconst errorType = errorData.error_type || 'general_error';\nconst errorMessage = errorData.error_message || errorData.message || 'An error occurred';\nconst errorDetails = errorData.error_details || errorData.details || null;\nconst statusCode = errorData.status_code || errorData.statusCode || 500;\nconst context = errorData.context || {};\nconst originalError = errorData.original_error || null;\nconst includeStack = errorData.include_stack || false;\nconst userFriendly = errorData.user_friendly !== false; // Default true\n\n// Error type categorization and standard status codes\nconst errorCategories = {\n  validation_error: {\n    default_status: 400,\n    user_message: 'Invalid input provided',\n    category: 'client_error'\n  },\n  authentication_error: {\n    default_status: 401,\n    user_message: 'Authentication required',\n    category: 'client_error'\n  },\n  authorization_error: {\n    default_status: 403,\n    user_message: 'Permission denied',\n    category: 'client_error'\n  },\n  not_found_error: {\n    default_status: 404,\n    user_message: 'Resource not found',\n    category: 'client_error'\n  },\n  conflict_error: {\n    default_status: 409,\n    user_message: 'Resource conflict',\n    category: 'client_error'\n  },\n  database_error: {\n    default_status: 500,\n    user_message: 'Database operation failed',\n    category: 'server_error'\n  },\n  external_service_error: {\n    default_status: 502,\n    user_message: 'External service unavailable',\n    category: 'server_error'\n  },\n  timeout_error: {\n    default_status: 408,\n    user_message: 'Request timeout',\n    category: 'client_error'\n  },\n  rate_limit_error: {\n    default_status: 429,\n    user_message: 'Rate limit exceeded',\n    category: 'client_error'\n  },\n  general_error: {\n    default_status: 500,\n    user_message: 'Internal server error',\n    category: 'server_error'\n  }\n};\n\n// Get error category info\nconst categoryInfo = errorCategories[errorType] || errorCategories.general_error;\nconst finalStatusCode = statusCode || categoryInfo.default_status;\nconst finalMessage = userFriendly ? (errorMessage || categoryInfo.user_message) : errorMessage;\n\n// Generate error ID for tracking\nconst errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n\n// Build comprehensive error response\nconst errorResponse = {\n  success: false,\n  error: {\n    id: errorId,\n    type: errorType,\n    category: categoryInfo.category,\n    message: finalMessage,\n    status_code: finalStatusCode,\n    timestamp: new Date().toISOString()\n  },\n  request_context: {\n    ...context,\n    error_occurred_at: new Date().toISOString()\n  }\n};\n\n// Add detailed error information for debugging (non-production)\nif (errorDetails && !userFriendly) {\n  errorResponse.error.details = errorDetails;\n}\n\n// Add original error information if provided\nif (originalError) {\n  errorResponse.error.original_message = originalError.message || originalError;\n  \n  if (includeStack && originalError.stack) {\n    errorResponse.error.stack_trace = originalError.stack;\n  }\n}\n\n// Add specific error handling based on type\nswitch (errorType) {\n  case 'validation_error':\n    if (errorData.validation_errors) {\n      errorResponse.error.validation_errors = errorData.validation_errors;\n    }\n    if (errorData.invalid_fields) {\n      errorResponse.error.invalid_fields = errorData.invalid_fields;\n    }\n    break;\n    \n  case 'database_error':\n    // Sanitize database errors for security\n    if (originalError && originalError.message) {\n      if (originalError.message.includes('duplicate key')) {\n        errorResponse.error.message = 'Record already exists';\n        errorResponse.error.constraint_violation = 'unique_constraint';\n      } else if (originalError.message.includes('foreign key')) {\n        errorResponse.error.message = 'Referenced record does not exist';\n        errorResponse.error.constraint_violation = 'foreign_key_constraint';\n      } else if (originalError.message.includes('not null')) {\n        errorResponse.error.message = 'Required field is missing';\n        errorResponse.error.constraint_violation = 'not_null_constraint';\n      }\n    }\n    break;\n    \n  case 'rate_limit_error':\n    if (errorData.retry_after) {\n      errorResponse.error.retry_after = errorData.retry_after;\n    }\n    if (errorData.limit_info) {\n      errorResponse.error.limit_info = errorData.limit_info;\n    }\n    break;\n    \n  case 'external_service_error':\n    if (errorData.service_name) {\n      errorResponse.error.service_name = errorData.service_name;\n    }\n    if (errorData.service_status) {\n      errorResponse.error.service_status = errorData.service_status;\n    }\n    break;\n}\n\n// Add recovery suggestions based on error type\nconst recoverySuggestions = {\n  validation_error: 'Please check your input and try again',\n  authentication_error: 'Please log in and try again',\n  authorization_error: 'Please contact an administrator for access',\n  not_found_error: 'Please verify the resource exists',\n  timeout_error: 'Please try again later',\n  rate_limit_error: 'Please wait before making another request',\n  external_service_error: 'Please try again later or contact support'\n};\n\nif (recoverySuggestions[errorType]) {\n  errorResponse.error.suggestion = recoverySuggestions[errorType];\n}\n\n// Logging metadata\nconst loggingData = {\n  error_id: errorId,\n  error_type: errorType,\n  status_code: finalStatusCode,\n  category: categoryInfo.category,\n  context: context,\n  timestamp: new Date().toISOString(),\n  should_alert: finalStatusCode >= 500, // Alert on server errors\n  should_log: true\n};\n\nreturn {\n  json: {\n    error_response: errorResponse,\n    logging_data: loggingData,\n    status_code: finalStatusCode\n  }\n};"
+      },
+      "id": "process_error",
+      "name": "Process Error Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.logging_data.should_log }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check_should_log",
+      "name": "Check Should Log",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL || 'http://localhost:5678/webhook' }}/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"system_id\": $json.logging_data.context.system_id || null,\n  \"event\": \"error_occurred\",\n  \"details\": {\n    \"error_id\": $json.logging_data.error_id,\n    \"error_type\": $json.logging_data.error_type,\n    \"status_code\": $json.logging_data.status_code,\n    \"category\": $json.logging_data.category,\n    \"context\": $json.logging_data.context,\n    \"should_alert\": $json.logging_data.should_alert\n  }\n} }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "log_error_event",
+      "name": "Log Error Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $('Process Error Data').item.json.logging_data.should_alert }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check_should_alert",
+      "name": "Check Should Alert",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Send error alert/notification\nconst errorData = $('Process Error Data').item.json;\nconst errorResponse = errorData.error_response;\nconst loggingData = errorData.logging_data;\n\n// Format alert message\nconst alertMessage = {\n  alert_type: 'error',\n  severity: errorResponse.error.status_code >= 500 ? 'high' : 'medium',\n  title: `${errorResponse.error.type} - ${errorResponse.error.message}`,\n  description: `Error ID: ${errorResponse.error.id}\\nStatus: ${errorResponse.error.status_code}\\nCategory: ${errorResponse.error.category}`,\n  error_details: {\n    error_id: errorResponse.error.id,\n    error_type: errorResponse.error.type,\n    status_code: errorResponse.error.status_code,\n    timestamp: errorResponse.error.timestamp,\n    context: loggingData.context\n  },\n  requires_attention: errorResponse.error.status_code >= 500\n};\n\n// In a real implementation, this would integrate with:\n// - Slack/Discord notifications\n// - Email alerts\n// - PagerDuty/monitoring systems\n// - Admin dashboard alerts\n\nreturn {\n  json: {\n    alert_sent: true,\n    alert_message: alertMessage,\n    alert_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "send_alert",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all error processing results\nconst errorData = $('Process Error Data').item.json;\nconst logResult = $('Log Error Event').all().length > 0 ? $('Log Error Event').item.json : null;\nconst alertResult = $('Send Error Alert').all().length > 0 ? $('Send Error Alert').item.json : null;\n\n// Build final response\nconst finalResponse = {\n  ...errorData.error_response,\n  processing: {\n    logged: logResult !== null,\n    alerted: alertResult !== null,\n    processed_at: new Date().toISOString()\n  }\n};\n\n// Add processing details if available\nif (logResult) {\n  finalResponse.processing.log_result = 'success';\n}\nif (alertResult) {\n  finalResponse.processing.alert_result = 'success';\n  finalResponse.processing.alert_timestamp = alertResult.alert_timestamp;\n}\n\nreturn {\n  json: finalResponse\n};"
+      },
+      "id": "combine_results",
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "responseCode": "={{ $('Process Error Data').item.json.status_code }}",
+        "options": {}
+      },
+      "id": "error_response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1450,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "webhook_error_handler": {
+      "main": [
+        [
+          {
+            "node": "process_error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process_error": {
+      "main": [
+        [
+          {
+            "node": "check_should_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_should_log": {
+      "main": [
+        [
+          {
+            "node": "log_error_event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "check_should_alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log_error_event": {
+      "main": [
+        [
+          {
+            "node": "check_should_alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_should_alert": {
+      "main": [
+        [
+          {
+            "node": "send_alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "combine_results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send_alert": {
+      "main": [
+        [
+          {
+            "node": "combine_results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "combine_results": {
+      "main": [
+        [
+          {
+            "node": "error_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {},
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-28T20:00:00.000Z",
+  "versionId": "1",
+  "active": true,
+  "meta": {},
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

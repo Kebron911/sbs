@@ -1,0 +1,2 @@
+# This file ensures the n8n backups directory is preserved in git
+# The actual backup files are excluded by .gitignore

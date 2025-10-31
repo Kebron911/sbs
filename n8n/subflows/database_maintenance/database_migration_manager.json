@@ -1,0 +1,550 @@
+{
+  "name": "🔄 Database Migration & Schema Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "db-migration-manager",
+        "options": {}
+      },
+      "id": "a1b2c3d4-5e6f-7890-1234-56789abcdef0",
+      "name": "Webhook - Migration Manager",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        400
+      ],
+      "webhookId": "db-migration-manager"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "schema_version",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_1"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SchemaVersion"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "run_migration",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "RunMigration"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "rollback_migration",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_3"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "RollbackMigration"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "index_management",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "IndexManagement"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "constraint_management",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_5"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ConstraintManagement"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.operation }}",
+                    "rightValue": "data_migration",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "condition_6"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "DataMigration"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-6f7a-8901-2345-6789abcdef01",
+      "name": "Route Migration Operation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        440,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Schema Version Management\nWITH schema_version_info AS (\n  -- Check if migration tracking table exists\n  SELECT \n    CASE WHEN EXISTS (\n      SELECT 1 FROM information_schema.tables \n      WHERE table_schema = 'public' \n        AND table_name = 'schema_migrations'\n    ) THEN true ELSE false END as migration_table_exists\n),\ncurrent_schema_info AS (\n  SELECT \n    current_database() as database_name,\n    version() as postgresql_version,\n    pg_size_pretty(pg_database_size(current_database())) as database_size,\n    COUNT(*) as total_tables\n  FROM information_schema.tables \n  WHERE table_schema = 'public'\n),\nschema_migrations_data AS (\n  SELECT \n    COALESCE(\n      (SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1),\n      '0.0.0'\n    ) as current_version,\n    COALESCE(\n      (SELECT COUNT(*) FROM schema_migrations),\n      0\n    ) as total_migrations,\n    COALESCE(\n      (SELECT MAX(applied_at) FROM schema_migrations),\n      NULL\n    ) as last_migration_date\n),\npending_migrations AS (\n  -- Define available migrations (in a real system, this would come from migration files)\n  SELECT \n    version,\n    description,\n    CASE WHEN version > (SELECT current_version FROM schema_migrations_data) THEN 'pending' ELSE 'applied' END as status\n  FROM (\n    VALUES \n      ('3.0.0', 'SBS Ecosystem Schema v3.0 - Enterprise Grade'),\n      ('3.1.0', 'Enhanced Logging and Monitoring'),\n      ('3.2.0', 'Advanced Analytics Tables'),\n      ('3.3.0', 'Performance Optimization Indexes'),\n      ('3.4.0', 'Security Enhancement Constraints')\n  ) AS migrations(version, description)\n)\nSELECT \n  'schema_version' as operation,\n  json_build_object(\n    'schema_info', (\n      SELECT json_build_object(\n        'migration_table_exists', migration_table_exists,\n        'current_version', (\n          CASE WHEN migration_table_exists THEN \n            (SELECT current_version FROM schema_migrations_data)\n          ELSE '0.0.0' END\n        ),\n        'total_migrations', (\n          CASE WHEN migration_table_exists THEN \n            (SELECT total_migrations FROM schema_migrations_data)\n          ELSE 0 END\n        ),\n        'last_migration_date', (\n          CASE WHEN migration_table_exists THEN \n            (SELECT last_migration_date FROM schema_migrations_data)\n          ELSE NULL END\n        )\n      ) FROM schema_version_info\n    ),\n    'database_info', (\n      SELECT row_to_json(csi) FROM current_schema_info csi\n    ),\n    'available_migrations', (\n      SELECT json_agg(row_to_json(pm)) FROM pending_migrations pm\n    ),\n    'schema_health', (\n      SELECT json_build_object(\n        'table_count', COUNT(*),\n        'constraint_count', (\n          SELECT COUNT(*) \n          FROM information_schema.table_constraints \n          WHERE table_schema = 'public'\n        ),\n        'index_count', (\n          SELECT COUNT(*) \n          FROM pg_indexes \n          WHERE schemaname = 'public'\n        ),\n        'foreign_key_count', (\n          SELECT COUNT(*) \n          FROM information_schema.table_constraints \n          WHERE table_schema = 'public' \n            AND constraint_type = 'FOREIGN KEY'\n        )\n      )\n      FROM information_schema.tables \n      WHERE table_schema = 'public'\n    ),\n    'analysis_timestamp', now()\n  ) as migration_data;",
+        "options": {}
+      },
+      "id": "c3d4e5f6-7a8b-9012-3456-789abcdef012",
+      "name": "Check Schema Version",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Run Database Migration\nDO $$\nDECLARE\n  migration_version TEXT := $migration_version$;\n  migration_description TEXT := $migration_description$;\n  dry_run BOOLEAN := $dry_run$;\n  migration_sql TEXT;\nBEGIN\n  -- Create migration tracking table if it doesn't exist\n  IF NOT EXISTS (\n    SELECT 1 FROM information_schema.tables \n    WHERE table_schema = 'public' AND table_name = 'schema_migrations'\n  ) THEN\n    CREATE TABLE schema_migrations (\n      id SERIAL PRIMARY KEY,\n      version VARCHAR(20) UNIQUE NOT NULL,\n      description TEXT,\n      applied_at TIMESTAMP WITH TIME ZONE DEFAULT now(),\n      rollback_sql TEXT,\n      migration_sql TEXT\n    );\n    \n    INSERT INTO schema_migrations (version, description, migration_sql) \n    VALUES ('3.0.0', 'Initial SBS Schema', 'CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";');\n  END IF;\n  \n  -- Check if migration already applied\n  IF EXISTS (SELECT 1 FROM schema_migrations WHERE version = migration_version) THEN\n    RAISE NOTICE 'Migration % already applied', migration_version;\n    RETURN;\n  END IF;\n  \n  -- Define migration SQL based on version\n  CASE migration_version\n    WHEN '3.1.0' THEN\n      migration_sql := '\n        -- Enhanced Logging and Monitoring\n        ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS correlation_id UUID DEFAULT uuid_generate_v4();\n        ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS source_ip INET;\n        ALTER TABLE system_logs ADD COLUMN IF NOT EXISTS user_agent TEXT;\n        \n        CREATE INDEX IF NOT EXISTS idx_system_logs_correlation_id ON system_logs(correlation_id);\n        CREATE INDEX IF NOT EXISTS idx_system_logs_source_ip ON system_logs(source_ip);\n      ';\n      \n    WHEN '3.2.0' THEN\n      migration_sql := '\n        -- Advanced Analytics Tables\n        CREATE TABLE IF NOT EXISTS analytics_snapshots (\n          id SERIAL PRIMARY KEY,\n          snapshot_date DATE DEFAULT CURRENT_DATE,\n          user_count INTEGER,\n          active_users_7d INTEGER,\n          total_systems INTEGER,\n          total_routines INTEGER,\n          avg_completion_rate NUMERIC(5,2),\n          snapshot_data JSONB,\n          created_at TIMESTAMP WITH TIME ZONE DEFAULT now()\n        );\n        \n        CREATE UNIQUE INDEX IF NOT EXISTS idx_analytics_snapshots_date ON analytics_snapshots(snapshot_date);\n      ';\n      \n    WHEN '3.3.0' THEN\n      migration_sql := '\n        -- Performance Optimization Indexes\n        CREATE INDEX IF NOT EXISTS idx_characters_user_id_level ON characters(user_id, level);\n        CREATE INDEX IF NOT EXISTS idx_habits_character_id_type ON habits(character_id, type);\n        CREATE INDEX IF NOT EXISTS idx_routines_system_id_status ON routines(system_id, status);\n        CREATE INDEX IF NOT EXISTS idx_missions_character_id_status ON missions(character_id, status);\n        CREATE INDEX IF NOT EXISTS idx_events_character_id_date ON events(character_id, event_date);\n        CREATE INDEX IF NOT EXISTS idx_transactions_character_id_date ON transactions(character_id, trans_date);\n        CREATE INDEX IF NOT EXISTS idx_system_steps_system_id_status ON system_steps(system_id, status);\n      ';\n      \n    WHEN '3.4.0' THEN\n      migration_sql := '\n        -- Security Enhancement Constraints\n        ALTER TABLE users ADD CONSTRAINT IF NOT EXISTS chk_users_email_format \n          CHECK (email ~* ''^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'');\n        \n        ALTER TABLE characters ADD CONSTRAINT IF NOT EXISTS chk_characters_level_positive \n          CHECK (level >= 0);\n        \n        ALTER TABLE characters ADD CONSTRAINT IF NOT EXISTS chk_characters_xp_positive \n          CHECK (xp >= 0);\n        \n        ALTER TABLE characters ADD CONSTRAINT IF NOT EXISTS chk_characters_coins_positive \n          CHECK (coins >= 0);\n        \n        ALTER TABLE habits ADD CONSTRAINT IF NOT EXISTS chk_habits_streak_positive \n          CHECK (streak >= 0);\n      ';\n      \n    ELSE\n      RAISE EXCEPTION 'Unknown migration version: %', migration_version;\n  END CASE;\n  \n  -- Execute migration (unless dry run)\n  IF NOT dry_run THEN\n    EXECUTE migration_sql;\n    \n    -- Record the migration\n    INSERT INTO schema_migrations (version, description, migration_sql)\n    VALUES (migration_version, migration_description, migration_sql);\n    \n    RAISE NOTICE 'Migration % applied successfully', migration_version;\n  ELSE\n    RAISE NOTICE 'DRY RUN: Migration % would execute: %', migration_version, migration_sql;\n  END IF;\n  \nEND $$;\n\n-- Return migration result\nSELECT \n  'run_migration' as operation,\n  json_build_object(\n    'status', 'success',\n    'migration_version', $1,\n    'description', $2,\n    'dry_run', $3,\n    'applied_at', now(),\n    'database_version', version()\n  ) as migration_data;",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.migration_version || '3.1.0' }}"
+              },
+              {
+                "parameter": "={{ $json.migration_description || 'Enhanced Logging and Monitoring' }}"
+              },
+              {
+                "parameter": "={{ $json.dry_run || false }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "d4e5f6g7-8b9c-0123-4567-89abcdef0123",
+      "name": "Execute Migration",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Rollback Database Migration\nDO $$\nDECLARE\n  rollback_version TEXT := $1;\n  confirm_rollback BOOLEAN := $2;\n  rollback_sql TEXT;\nBEGIN\n  -- Safety check\n  IF NOT confirm_rollback THEN\n    RAISE EXCEPTION 'Rollback confirmation required. Set confirm_rollback to true.';\n  END IF;\n  \n  -- Check if migration exists\n  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = rollback_version) THEN\n    RAISE EXCEPTION 'Migration % not found', rollback_version;\n  END IF;\n  \n  -- Define rollback SQL based on version\n  CASE rollback_version\n    WHEN '3.1.0' THEN\n      rollback_sql := '\n        DROP INDEX IF EXISTS idx_system_logs_correlation_id;\n        DROP INDEX IF EXISTS idx_system_logs_source_ip;\n        ALTER TABLE system_logs DROP COLUMN IF EXISTS correlation_id;\n        ALTER TABLE system_logs DROP COLUMN IF EXISTS source_ip;\n        ALTER TABLE system_logs DROP COLUMN IF EXISTS user_agent;\n      ';\n      \n    WHEN '3.2.0' THEN\n      rollback_sql := '\n        DROP TABLE IF EXISTS analytics_snapshots;\n      ';\n      \n    WHEN '3.3.0' THEN\n      rollback_sql := '\n        DROP INDEX IF EXISTS idx_characters_user_id_level;\n        DROP INDEX IF EXISTS idx_habits_character_id_type;\n        DROP INDEX IF EXISTS idx_routines_system_id_status;\n        DROP INDEX IF EXISTS idx_missions_character_id_status;\n        DROP INDEX IF EXISTS idx_events_character_id_date;\n        DROP INDEX IF EXISTS idx_transactions_character_id_date;\n        DROP INDEX IF EXISTS idx_system_steps_system_id_status;\n      ';\n      \n    WHEN '3.4.0' THEN\n      rollback_sql := '\n        ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_users_email_format;\n        ALTER TABLE characters DROP CONSTRAINT IF EXISTS chk_characters_level_positive;\n        ALTER TABLE characters DROP CONSTRAINT IF EXISTS chk_characters_xp_positive;\n        ALTER TABLE characters DROP CONSTRAINT IF EXISTS chk_characters_coins_positive;\n        ALTER TABLE habits DROP CONSTRAINT IF EXISTS chk_habits_streak_positive;\n      ';\n      \n    ELSE\n      RAISE EXCEPTION 'Rollback not defined for version: %', rollback_version;\n  END CASE;\n  \n  -- Execute rollback\n  EXECUTE rollback_sql;\n  \n  -- Remove migration record\n  DELETE FROM schema_migrations WHERE version = rollback_version;\n  \n  RAISE NOTICE 'Migration % rolled back successfully', rollback_version;\n  \nEND $$;\n\n-- Return rollback result\nSELECT \n  'rollback_migration' as operation,\n  json_build_object(\n    'status', 'success',\n    'rolled_back_version', $1,\n    'confirm_rollback', $2,\n    'rollback_at', now()\n  ) as migration_data;",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.rollback_version || '3.1.0' }}"
+              },
+              {
+                "parameter": "={{ $json.confirm_rollback || false }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e5f6g7h8-9c0d-1234-5678-9abcdef01234",
+      "name": "Rollback Migration",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Index Management\nWITH index_analysis AS (\n  SELECT \n    schemaname,\n    tablename,\n    indexname,\n    indexdef,\n    CASE WHEN indexdef LIKE '%UNIQUE%' THEN 'unique'\n         WHEN indexdef LIKE '%btree%' THEN 'btree'\n         WHEN indexdef LIKE '%gin%' THEN 'gin'\n         WHEN indexdef LIKE '%gist%' THEN 'gist'\n         ELSE 'other'\n    END as index_type\n  FROM pg_indexes \n  WHERE schemaname = 'public'\n),\nindex_usage AS (\n  SELECT \n    schemaname,\n    tablename,\n    indexname,\n    idx_tup_read,\n    idx_tup_fetch,\n    CASE WHEN idx_tup_read = 0 THEN 'unused'\n         WHEN idx_tup_read < 100 THEN 'low_usage'\n         WHEN idx_tup_read < 10000 THEN 'medium_usage'\n         ELSE 'high_usage'\n    END as usage_level\n  FROM pg_stat_user_indexes\n  WHERE schemaname = 'public'\n),\nindex_recommendations AS (\n  -- Recommend indexes for foreign keys without indexes\n  SELECT \n    'create_fk_index' as recommendation_type,\n    tc.table_name,\n    kcu.column_name,\n    'CREATE INDEX idx_' || tc.table_name || '_' || kcu.column_name || ' ON ' || tc.table_name || '(' || kcu.column_name || ');' as suggested_sql\n  FROM information_schema.table_constraints tc\n  JOIN information_schema.key_column_usage kcu \n    ON tc.constraint_name = kcu.constraint_name\n  WHERE tc.constraint_type = 'FOREIGN KEY'\n    AND tc.table_schema = 'public'\n    AND NOT EXISTS (\n      SELECT 1 FROM pg_indexes pi\n      WHERE pi.tablename = tc.table_name \n        AND pi.indexdef LIKE '%' || kcu.column_name || '%'\n    )\n  \n  UNION ALL\n  \n  -- Recommend composite indexes for common query patterns\n  SELECT \n    'create_composite_index' as recommendation_type,\n    'characters' as table_name,\n    'user_id, level' as column_name,\n    'CREATE INDEX idx_characters_user_level ON characters(user_id, level);' as suggested_sql\n  WHERE NOT EXISTS (\n    SELECT 1 FROM pg_indexes \n    WHERE tablename = 'characters' \n      AND indexdef LIKE '%user_id%level%'\n  )\n)\nSELECT \n  'index_management' as operation,\n  json_build_object(\n    'current_indexes', (\n      SELECT json_agg(\n        json_build_object(\n          'schema', ia.schemaname,\n          'table', ia.tablename,\n          'index_name', ia.indexname,\n          'index_type', ia.index_type,\n          'definition', ia.indexdef,\n          'usage_level', COALESCE(iu.usage_level, 'unknown'),\n          'reads', COALESCE(iu.idx_tup_read, 0),\n          'fetches', COALESCE(iu.idx_tup_fetch, 0)\n        )\n      )\n      FROM index_analysis ia\n      LEFT JOIN index_usage iu ON ia.indexname = iu.indexname\n    ),\n    'usage_summary', (\n      SELECT json_build_object(\n        'total_indexes', COUNT(*),\n        'unused_indexes', COUNT(CASE WHEN usage_level = 'unused' THEN 1 END),\n        'low_usage_indexes', COUNT(CASE WHEN usage_level = 'low_usage' THEN 1 END),\n        'medium_usage_indexes', COUNT(CASE WHEN usage_level = 'medium_usage' THEN 1 END),\n        'high_usage_indexes', COUNT(CASE WHEN usage_level = 'high_usage' THEN 1 END)\n      )\n      FROM index_usage\n    ),\n    'recommendations', (\n      SELECT json_agg(\n        json_build_object(\n          'type', recommendation_type,\n          'table', table_name,\n          'columns', column_name,\n          'sql', suggested_sql\n        )\n      )\n      FROM index_recommendations\n    ),\n    'operation_type', $1,\n    'analysis_timestamp', now()\n  ) as migration_data;",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.index_operation || 'analyze' }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "f6g7h8i9-0d1e-2345-6789-abcdef012345",
+      "name": "Manage Database Indexes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Constraint Management\nWITH constraint_analysis AS (\n  SELECT \n    tc.table_name,\n    tc.constraint_name,\n    tc.constraint_type,\n    kcu.column_name,\n    CASE \n      WHEN tc.constraint_type = 'FOREIGN KEY' THEN \n        (SELECT table_name FROM information_schema.key_column_usage \n         WHERE constraint_name = rc.unique_constraint_name)\n      ELSE NULL\n    END as referenced_table,\n    cc.check_clause\n  FROM information_schema.table_constraints tc\n  LEFT JOIN information_schema.key_column_usage kcu \n    ON tc.constraint_name = kcu.constraint_name\n  LEFT JOIN information_schema.referential_constraints rc \n    ON tc.constraint_name = rc.constraint_name\n  LEFT JOIN information_schema.check_constraints cc \n    ON tc.constraint_name = cc.constraint_name\n  WHERE tc.table_schema = 'public'\n),\nconstraint_violations AS (\n  -- Check for potential constraint violations\n  SELECT \n    'foreign_key_violation' as violation_type,\n    'characters -> users' as constraint_desc,\n    COUNT(*) as violation_count\n  FROM characters c\n  LEFT JOIN users u ON c.user_id = u.id\n  WHERE u.id IS NULL AND c.user_id IS NOT NULL\n  \n  UNION ALL\n  \n  SELECT \n    'foreign_key_violation' as violation_type,\n    'habits -> characters' as constraint_desc,\n    COUNT(*) as violation_count\n  FROM habits h\n  LEFT JOIN characters c ON h.character_id = c.id\n  WHERE c.id IS NULL AND h.character_id IS NOT NULL\n  \n  UNION ALL\n  \n  SELECT \n    'check_constraint_violation' as violation_type,\n    'negative_values' as constraint_desc,\n    COUNT(*) as violation_count\n  FROM characters\n  WHERE xp < 0 OR coins < 0 OR level < 0\n),\nconstraint_recommendations AS (\n  -- Recommend missing constraints\n  SELECT \n    'add_not_null' as recommendation_type,\n    'users' as table_name,\n    'email' as column_name,\n    'ALTER TABLE users ALTER COLUMN email SET NOT NULL;' as suggested_sql\n  WHERE NOT EXISTS (\n    SELECT 1 FROM information_schema.columns \n    WHERE table_name = 'users' \n      AND column_name = 'email' \n      AND is_nullable = 'NO'\n  )\n  \n  UNION ALL\n  \n  SELECT \n    'add_check_constraint' as recommendation_type,\n    'characters' as table_name,\n    'level >= 0' as column_name,\n    'ALTER TABLE characters ADD CONSTRAINT chk_characters_level_positive CHECK (level >= 0);' as suggested_sql\n  WHERE NOT EXISTS (\n    SELECT 1 FROM constraint_analysis \n    WHERE table_name = 'characters' \n      AND constraint_type = 'CHECK'\n      AND check_clause LIKE '%level%'\n  )\n)\nSELECT \n  'constraint_management' as operation,\n  json_build_object(\n    'current_constraints', (\n      SELECT json_agg(\n        json_build_object(\n          'table', table_name,\n          'constraint_name', constraint_name,\n          'constraint_type', constraint_type,\n          'column', column_name,\n          'referenced_table', referenced_table,\n          'check_clause', check_clause\n        )\n      )\n      FROM constraint_analysis\n    ),\n    'constraint_violations', (\n      SELECT json_agg(\n        json_build_object(\n          'violation_type', violation_type,\n          'description', constraint_desc,\n          'count', violation_count\n        )\n      )\n      FROM constraint_violations\n      WHERE violation_count > 0\n    ),\n    'constraint_summary', (\n      SELECT json_build_object(\n        'total_constraints', COUNT(*),\n        'primary_keys', COUNT(CASE WHEN constraint_type = 'PRIMARY KEY' THEN 1 END),\n        'foreign_keys', COUNT(CASE WHEN constraint_type = 'FOREIGN KEY' THEN 1 END),\n        'unique_constraints', COUNT(CASE WHEN constraint_type = 'UNIQUE' THEN 1 END),\n        'check_constraints', COUNT(CASE WHEN constraint_type = 'CHECK' THEN 1 END)\n      )\n      FROM constraint_analysis\n    ),\n    'recommendations', (\n      SELECT json_agg(\n        json_build_object(\n          'type', recommendation_type,\n          'table', table_name,\n          'description', column_name,\n          'sql', suggested_sql\n        )\n      )\n      FROM constraint_recommendations\n    ),\n    'operation_type', $1,\n    'analysis_timestamp', now()\n  ) as migration_data;",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.constraint_operation || 'analyze' }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "g7h8i9j0-1e2f-3456-789a-bcdef0123456",
+      "name": "Manage Database Constraints",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        600
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Data Migration Operations\nWITH migration_stats AS (\n  SELECT \n    $1 as migration_type,\n    $2 as source_table,\n    $3 as target_table,\n    $4 as dry_run,\n    current_timestamp as operation_start\n),\ndata_validation AS (\n  SELECT \n    CASE $1\n      WHEN 'copy_data' THEN (\n        SELECT json_build_object(\n          'source_exists', EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $2),\n          'target_exists', EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $3),\n          'source_count', CASE WHEN EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $2) \n                              THEN (SELECT COUNT(*) FROM characters) -- Example table\n                              ELSE 0 END\n        )\n      )\n      WHEN 'transform_data' THEN (\n        SELECT json_build_object(\n          'transformation_ready', true,\n          'affected_rows', (SELECT COUNT(*) FROM characters WHERE level IS NULL OR level < 0)\n        )\n      )\n      WHEN 'cleanup_data' THEN (\n        SELECT json_build_object(\n          'orphaned_records', (\n            SELECT COUNT(*) FROM habits h \n            LEFT JOIN characters c ON h.character_id = c.id \n            WHERE c.id IS NULL\n          ),\n          'duplicate_records', (\n            SELECT COUNT(*) - COUNT(DISTINCT email) FROM users\n          )\n        )\n      )\n      ELSE json_build_object('status', 'unknown_migration_type')\n    END as validation_result\n),\nexecution_plan AS (\n  SELECT \n    CASE $1\n      WHEN 'copy_data' THEN \n        'INSERT INTO ' || $3 || ' SELECT * FROM ' || $2 || ' WHERE created_at >= now() - interval ''30 days'';'\n      WHEN 'transform_data' THEN \n        'UPDATE characters SET level = GREATEST(level, 0) WHERE level < 0;'\n      WHEN 'cleanup_data' THEN \n        'DELETE FROM habits WHERE character_id NOT IN (SELECT id FROM characters);'\n      ELSE 'SELECT 1; -- No operation defined'\n    END as planned_sql\n)\nSELECT \n  'data_migration' as operation,\n  json_build_object(\n    'migration_info', (\n      SELECT row_to_json(ms) FROM migration_stats ms\n    ),\n    'validation_results', (\n      SELECT validation_result FROM data_validation\n    ),\n    'execution_plan', (\n      SELECT json_build_object(\n        'sql_to_execute', planned_sql,\n        'estimated_impact', CASE $1\n          WHEN 'copy_data' THEN 'Creates copy of data in target table'\n          WHEN 'transform_data' THEN 'Modifies existing data in place'\n          WHEN 'cleanup_data' THEN 'Removes orphaned/invalid records'\n          ELSE 'Unknown impact'\n        END,\n        'safety_level', CASE $1\n          WHEN 'copy_data' THEN 'high'\n          WHEN 'transform_data' THEN 'medium'\n          WHEN 'cleanup_data' THEN 'low'\n          ELSE 'unknown'\n        END\n      )\n      FROM execution_plan\n    ),\n    'safety_checks', json_build_object(\n      'dry_run_mode', $4,\n      'backup_recommended', CASE WHEN $1 IN ('transform_data', 'cleanup_data') THEN true ELSE false END,\n      'rollback_available', CASE WHEN $1 = 'copy_data' THEN true ELSE false END,\n      'requires_confirmation', CASE WHEN $4 = false AND $1 != 'copy_data' THEN true ELSE false END\n    ),\n    'execution_status', CASE \n      WHEN $4 = true THEN 'dry_run_completed'\n      ELSE 'ready_for_execution'\n    END,\n    'analysis_timestamp', now()\n  ) as migration_data;",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.migration_type || 'copy_data' }}"
+              },
+              {
+                "parameter": "={{ $json.source_table || 'characters' }}"
+              },
+              {
+                "parameter": "={{ $json.target_table || 'characters_backup' }}"
+              },
+              {
+                "parameter": "={{ $json.dry_run || true }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "h8i9j0k1-2f3g-4567-89ab-cdef01234567",
+      "name": "Execute Data Migration",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        640,
+        700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "postgres_main",
+          "name": "PostgreSQL - SBS Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process migration results and format response\nconst webhookData = $('Webhook - Migration Manager').first().json;\nconst operation = webhookData.operation || 'schema_version';\nconst safetyMode = webhookData.safety_mode !== false;\n\nlet results = {\n  timestamp: new Date().toISOString(),\n  operation: operation,\n  status: 'success',\n  safety_mode: safetyMode,\n  recommendations: [],\n  warnings: [],\n  execution_summary: {}\n};\n\n// Get the migration data from the database query\nconst migrationData = $input.first().json.migration_data;\nresults.data = migrationData;\n\n// Process results based on operation type\nif (operation === 'schema_version') {\n  const schemaInfo = migrationData.schema_info;\n  const dbInfo = migrationData.database_info;\n  \n  results.execution_summary = {\n    current_version: schemaInfo.current_version,\n    total_migrations: schemaInfo.total_migrations,\n    database_size: dbInfo.database_size,\n    total_tables: dbInfo.total_tables\n  };\n  \n  // Check for pending migrations\n  const pendingMigrations = migrationData.available_migrations?.filter(m => m.status === 'pending') || [];\n  \n  if (pendingMigrations.length > 0) {\n    results.recommendations.push({\n      priority: 'medium',\n      category: 'schema_updates',\n      title: `${pendingMigrations.length} pending migrations available`,\n      description: 'New schema migrations are available for deployment',\n      action: 'Review and apply pending migrations in a safe environment first',\n      migrations: pendingMigrations.map(m => ({ version: m.version, description: m.description }))\n    });\n  }\n  \n  if (!schemaInfo.migration_table_exists) {\n    results.warnings.push({\n      level: 'warning',\n      category: 'migration_tracking',\n      message: 'Schema migration tracking table does not exist',\n      recommendation: 'Initialize migration tracking before applying migrations'\n    });\n  }\n  \n} else if (operation === 'run_migration') {\n  results.execution_summary = {\n    migration_version: migrationData.migration_version,\n    description: migrationData.description,\n    dry_run: migrationData.dry_run,\n    applied_at: migrationData.applied_at\n  };\n  \n  if (migrationData.dry_run) {\n    results.warnings.push({\n      level: 'info',\n      category: 'dry_run',\n      message: 'Migration executed in dry-run mode - no changes were made',\n      recommendation: 'Review the execution plan and run with dry_run=false to apply changes'\n    });\n  } else {\n    results.recommendations.push({\n      priority: 'high',\n      category: 'post_migration',\n      title: 'Migration applied successfully',\n      description: `Migration ${migrationData.migration_version} has been applied`,\n      action: 'Verify application functionality and monitor for issues',\n      next_steps: ['Test critical workflows', 'Monitor error logs', 'Validate data integrity']\n    });\n  }\n  \n} else if (operation === 'rollback_migration') {\n  results.execution_summary = {\n    rolled_back_version: migrationData.rolled_back_version,\n    confirm_rollback: migrationData.confirm_rollback,\n    rollback_at: migrationData.rollback_at\n  };\n  \n  if (migrationData.confirm_rollback) {\n    results.warnings.push({\n      level: 'critical',\n      category: 'rollback_executed',\n      message: `Migration ${migrationData.rolled_back_version} has been rolled back`,\n      recommendation: 'Verify system functionality and data integrity after rollback'\n    });\n  }\n  \n} else if (operation === 'index_management') {\n  const usageSummary = migrationData.usage_summary;\n  const recommendations = migrationData.recommendations || [];\n  \n  results.execution_summary = {\n    total_indexes: usageSummary.total_indexes,\n    unused_indexes: usageSummary.unused_indexes,\n    recommendations_count: recommendations.length\n  };\n  \n  if (usageSummary.unused_indexes > 0) {\n    results.recommendations.push({\n      priority: 'medium',\n      category: 'index_optimization',\n      title: `${usageSummary.unused_indexes} unused indexes detected`,\n      description: 'Unused indexes consume storage and slow down writes',\n      action: 'Review unused indexes and consider removing them',\n      impact: 'Improved write performance and reduced storage usage'\n    });\n  }\n  \n  if (recommendations.length > 0) {\n    results.recommendations.push({\n      priority: 'low',\n      category: 'index_creation',\n      title: `${recommendations.length} index recommendations available`,\n      description: 'New indexes could improve query performance',\n      action: 'Review recommended indexes and implement based on query patterns',\n      recommended_indexes: recommendations\n    });\n  }\n  \n} else if (operation === 'constraint_management') {\n  const violations = migrationData.constraint_violations || [];\n  const constraintRecommendations = migrationData.recommendations || [];\n  \n  results.execution_summary = {\n    total_constraints: migrationData.constraint_summary.total_constraints,\n    violations_found: violations.length,\n    recommendations_count: constraintRecommendations.length\n  };\n  \n  if (violations.length > 0) {\n    results.warnings.push({\n      level: 'critical',\n      category: 'constraint_violations',\n      message: `${violations.length} constraint violations detected`,\n      recommendation: 'Fix data integrity issues before adding new constraints',\n      violations: violations\n    });\n  }\n  \n  if (constraintRecommendations.length > 0) {\n    results.recommendations.push({\n      priority: 'medium',\n      category: 'data_integrity',\n      title: `${constraintRecommendations.length} constraint recommendations`,\n      description: 'Additional constraints could improve data integrity',\n      action: 'Review and implement recommended constraints',\n      recommended_constraints: constraintRecommendations\n    });\n  }\n  \n} else if (operation === 'data_migration') {\n  const migrationInfo = migrationData.migration_info;\n  const validationResults = migrationData.validation_results;\n  const safetyChecks = migrationData.safety_checks;\n  \n  results.execution_summary = {\n    migration_type: migrationInfo.migration_type,\n    source_table: migrationInfo.source_table,\n    target_table: migrationInfo.target_table,\n    dry_run: migrationInfo.dry_run,\n    execution_status: migrationData.execution_status\n  };\n  \n  if (safetyChecks.backup_recommended) {\n    results.warnings.push({\n      level: 'warning',\n      category: 'safety_requirement',\n      message: 'Backup recommended before executing this migration',\n      recommendation: 'Create a database backup before proceeding with data modification'\n    });\n  }\n  \n  if (safetyChecks.requires_confirmation && !migrationInfo.dry_run) {\n    results.warnings.push({\n      level: 'critical',\n      category: 'confirmation_required',\n      message: 'This operation requires explicit confirmation',\n      recommendation: 'Review the execution plan carefully and confirm the operation'\n    });\n  }\n  \n  if (migrationInfo.dry_run) {\n    results.recommendations.push({\n      priority: 'low',\n      category: 'migration_planning',\n      title: 'Data migration plan generated',\n      description: 'Dry run completed successfully',\n      action: 'Review execution plan and run with dry_run=false to execute',\n      execution_plan: migrationData.execution_plan\n    });\n  }\n}\n\n// Add safety recommendations if safety mode is enabled\nif (safetyMode) {\n  results.recommendations.push({\n    priority: 'high',\n    category: 'safety_protocol',\n    title: 'Safety mode enabled',\n    description: 'All migration operations should be tested in development first',\n    action: 'Follow proper deployment procedures and backup protocols',\n    safety_checklist: [\n      'Test in development environment',\n      'Create database backup',\n      'Plan rollback procedure',\n      'Monitor application during deployment',\n      'Validate data integrity post-migration'\n    ]\n  });\n}\n\n// Calculate overall safety score\nlet safetyScore = 100;\nif (results.warnings.some(w => w.level === 'critical')) safetyScore -= 30;\nif (results.warnings.some(w => w.level === 'warning')) safetyScore -= 15;\nif (!safetyMode) safetyScore -= 10;\n\nresults.safety_score = safetyScore;\nresults.safety_level = safetyScore >= 80 ? 'high' : safetyScore >= 60 ? 'medium' : 'low';\n\nreturn { json: results };"
+      },
+      "id": "i9j0k1l2-3g4h-5678-90bc-def012345678",
+      "name": "Process Migration Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "j0k1l2m3-4h5i-6789-01cd-ef0123456789",
+      "name": "Return Migration Results",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Migration Manager": {
+      "main": [
+        [
+          {
+            "node": "Route Migration Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Migration Operation": {
+      "main": [
+        [
+          {
+            "node": "Check Schema Version",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Migration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rollback Migration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manage Database Indexes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manage Database Constraints",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Data Migration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Schema Version": {
+      "main": [
+        [
+          {
+            "node": "Process Migration Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Migration": {
+      "main": [
+        [
+          {
+            "node": "Process Migration Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rollback Migration": {
+      "main": [
+        [
+          {
+            "node": "Process Migration Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manage Database Indexes": {
+      "main": [
+        [
+          {
+            "node": "Process Migration Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manage Database Constraints": {
+      "main": [
+        [
+          {
+            "node": "Process Migration Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Data Migration": {
+      "main": [
+        [
+          {
+            "node": "Process Migration Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Migration Results": {
+      "main": [
+        [
+          {
+            "node": "Return Migration Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "sbs_ecosystem_v3"
+  },
+  "id": "db_migration_manager",
+  "tags": [
+    "database",
+    "migration",
+    "schema",
+    "deployment"
+  ],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

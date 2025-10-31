@@ -1,0 +1,360 @@
+{
+  "name": "PostgreSQL Event Listener",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pg-notify",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-pg-notify",
+      "name": "Webhook - PostgreSQL Notify",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        400
+      ],
+      "webhookId": "sbs-pg-notify"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the PostgreSQL NOTIFY payload\nconst payload = $input.first().json.body;\nlet parsedData;\n\nif (typeof payload === 'string') {\n  try {\n    parsedData = JSON.parse(payload);\n  } catch (e) {\n    parsedData = { raw: payload };\n  }\n} else {\n  parsedData = payload;\n}\n\nreturn [{ json: parsedData }];"
+      },
+      "id": "parse-notify-payload",
+      "name": "Parse NOTIFY Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.current_stage }}",
+              "operation": "equal",
+              "value2": "define"
+            }
+          ]
+        }
+      },
+      "id": "check-define-stage",
+      "name": "Check Define Stage",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.current_stage }}",
+              "operation": "equal",
+              "value2": "complete"
+            }
+          ]
+        }
+      },
+      "id": "check-complete-stage",
+      "name": "Check Complete Stage",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/system-created",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.name }}"
+            },
+            {
+              "name": "category",
+              "value": "={{ $json.category }}"
+            },
+            {
+              "name": "purpose",
+              "value": "={{ $json.purpose }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-spawner",
+      "name": "Trigger System Spawner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        850,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/system-update",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "current_stage",
+              "value": "={{ $json.current_stage }}"
+            },
+            {
+              "name": "name",
+              "value": "={{ $json.name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-orchestrator",
+      "name": "Trigger System Orchestrator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "message",
+              "value": "=ðŸŽŠ *System Complete!*\\n\\n*{{ $json.name }}* has completed all lifecycle stages.\\n\\nâœ… Define â†’ Design â†’ Build â†’ Automate â†’ Review\\n\\nCongratulations on building a self-sustaining system! ðŸš€"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-complete",
+      "name": "Notify System Complete (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        550
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "event",
+              "value": "system_completed"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  completed_at: new Date().toISOString(),\n  total_duration_days: Math.floor((Date.now() - new Date($json.created_at).getTime()) / (1000 * 60 * 60 * 24))\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-completion",
+      "name": "Log System Completion (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1050,
+        550
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"event\": \"system_update_processed\",\n  \"system_id\": $json.id,\n  \"stage\": $json.current_stage\n} }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - PostgreSQL Notify": {
+      "main": [
+        [
+          {
+            "node": "Parse NOTIFY Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse NOTIFY Payload": {
+      "main": [
+        [
+          {
+            "node": "Check Define Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Define Stage": {
+      "main": [
+        [
+          {
+            "node": "Trigger System Spawner",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Complete Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Complete Stage": {
+      "main": [
+        [
+          {
+            "node": "Notify System Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trigger System Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger System Spawner": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger System Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify System Complete": {
+      "main": [
+        [
+          {
+            "node": "Log System Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System Completion": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "tags": [],
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T16:26:05.000Z",
+  "createdAt": "2025-10-30T16:26:05.000Z"
+}

@@ -1,0 +1,940 @@
+{
+  "name": "Telegram Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-telegram-parser",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message_text",
+              "value": "={{ $json.message.text }}"
+            },
+            {
+              "name": "chat_id",
+              "value": "={{ $json.message.chat.id }}"
+            },
+            {
+              "name": "user_id",
+              "value": "={{ $json.message.from.id }}"
+            },
+            {
+              "name": "username",
+              "value": "={{ $json.message.from.username || $json.message.from.first_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "94bed79b-2766-4349-8a06-28a87999f9d4",
+      "name": "Parse Telegram Command",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -16,
+        4880
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "command_valid",
+              "leftValue": "={{ $('Parse Telegram Command').item.json.validation.is_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "04659afb-dd06-4391-a309-2f540d19dd81",
+      "name": "Validate Create Command",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        208,
+        4880
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, category FROM systems WHERE id = $1 AND current_stage != 'complete'",
+        "options": {}
+      },
+      "id": "ce123fdb-bdb8-48cf-8237-d0903628d64b",
+      "name": "Verify System Exists",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        432,
+        4784
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "system_exists",
+              "leftValue": "={{ $('Verify System Exists').item.json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ebb566da-0fba-43a6-90b0-ff95586d5f6d",
+      "name": "Check System Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        656,
+        4784
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO routines (name, system_id, day_of_week, description, status, created_at) VALUES ($1, $2, $3, $4, 'active', NOW()) RETURNING *",
+        "options": {}
+      },
+      "id": "63c349e4-0311-4bbf-8d0d-74b3875f870f",
+      "name": "Create New Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        880,
+        4688
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"system_id\": $('Create Routine').item.json.system_id,\n  \"event\": \"routine_created\",\n  \"details\": {\n    \"routine_id\": $('Create Routine').item.json.id,\n    \"routine_name\": $('Create Routine').item.json.name,\n    \"day_of_week\": $('Create Routine').item.json.day_of_week,\n    \"created_by\": \"telegram_bot\",\n    \"created_at\": new Date().toISOString()\n  }\n} }}",
+        "options": {}
+      },
+      "id": "a744d591-5323-4396-b9a9-74b7ad7a0048",
+      "name": "Log Routine Creation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1104,
+        4688
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $('Parse Telegram Command').item.json.chat_id,\n  \"message\": `✅ *Routine Created Successfully!*\\n\\n📋 **Routine:** ${$('Create New Routine').item.json.name}\\n🏗️ **System:** ${$('Verify System Exists').item.json.name}\\n📅 **Day:** ${$('Create New Routine').item.json.day_of_week}\\n\\n🎯 Your SBS system continues to evolve! This routine will help build sustainable habits.`,\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "0673c470-aeb6-4258-b1dd-7e1ca0db8dbd",
+      "name": "Send Routine Created Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1328,
+        4688
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $('Parse Create Routine Command').item.json.chat_id,\n  \"message\": \"❌ *System Not Found*\\n\\nThe system ID you specified doesn't exist or is already complete.\\n\\nUse `/status` to see your active systems and their IDs.\",\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "9d753e97-49ab-4539-bdd5-2755ff14a217",
+      "name": "Send System Not Found",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        880,
+        4880
+      ],
+      "webhookId": "system-not-found"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $('Parse Telegram Command').item.json.chat_id,\n  \"message\": $('Parse Telegram Command').item.json.message,\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "4f216d11-9938-421f-a4ed-c40d73d48a1c",
+      "name": "Send Create Error Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        432,
+        4976
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/sbs-skill-progression",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Complete Routine').item.json.system_id }}"
+            },
+            {
+              "name": "progression_type",
+              "value": "routine_completion"
+            },
+            {
+              "name": "source",
+              "value": "telegram_bot"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "47d9f057-3044-4aad-ba4a-5f6deb94cb2f",
+      "name": "Trigger Skill Progression1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        208,
+        4016
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/sbs-skill-progression",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Parse Telegram Command').item.json.parsed_command.arguments[0] }}"
+            },
+            {
+              "name": "progression_type",
+              "value": "stage_advancement"
+            },
+            {
+              "name": "source",
+              "value": "telegram_bot"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "4e4a1fd7-b173-4204-8be4-74c88db7d385",
+      "name": "Trigger Skill Progression Advance1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        208,
+        4400
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "4145b45d-8bea-4db0-b2be-da8b0006a179",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        -464,
+        4592
+      ],
+      "webhookId": "sbs-telegram-bot"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (system_id, event, details)\nSELECT \n  system_id,\n  'routine_completed',\n  jsonb_build_object(\n    'routine_id', $1,\n    'completed_at', NOW(),\n    'completed_by', 'telegram_bot'\n  )\nFROM routines\nWHERE id = $1\nRETURNING *;",
+        "options": {}
+      },
+      "id": "dcb28a95-818c-4947-bd91-d2416667904f",
+      "name": "Complete Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        4016
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $json.message.chat.id,\n  \"message\": \"✅ *Routine Completed!*\\n\\nGreat work! Your routine has been marked as complete.\\n\\n🎯 Keep up the momentum!\",\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "fb466a28-65c1-4480-a7e8-d63f8292d26d",
+      "name": "Send Complete Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        432,
+        4016
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (system_id, event, details)\nSELECT \n  system_id,\n  'routine_skipped',\n  jsonb_build_object(\n    'routine_id', $1,\n    'skipped_at', NOW(),\n    'reason', 'user_request'\n  )\nFROM routines\nWHERE id = $1\nRETURNING *;",
+        "options": {}
+      },
+      "id": "415f4ae6-850f-4a68-b2f6-ad46cb5e7274",
+      "name": "Skip Routine",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        4208
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $json.message.chat.id,\n  \"message\": \"⏭️ *Routine Skipped*\\n\\nNo problem! This routine has been skipped for today.\\n\\n💡 You'll get a reminder next time it's scheduled.\",\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "2ba8316d-c685-408c-a847-4e56f293b1d1",
+      "name": "Send Skip Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        208,
+        4208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/sbs-system-update",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $('Parse Telegram Command').item.json.parsed_command.arguments[0] }}"
+            },
+            {
+              "name": "action",
+              "value": "advance_stage"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fae0f77e-d37e-4dab-b877-e3ececaf548a",
+      "name": "Advance System Stage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        -16,
+        4400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $json.message.chat.id,\n  \"message\": \"🚀 *System Stage Advanced!*\\n\\nYour system has been moved to the next stage in its lifecycle.\\n\\nCheck the orchestrator for next steps!\",\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "dc43c95c-e71e-445a-8bfc-62dbf00acd39",
+      "name": "Send Advance Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        432,
+        4400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  s.id,\n  s.name,\n  s.category,\n  s.current_stage,\n  COUNT(DISTINCT ss.id) FILTER (WHERE ss.status = 'complete') as completed_steps,\n  COUNT(DISTINCT ss.id) as total_steps,\n  COUNT(DISTINCT r.id) as active_routines,\n  MAX(sl.created_at) as last_activity\nFROM systems s\nLEFT JOIN system_steps ss ON s.id = ss.system_id\nLEFT JOIN routines r ON s.id = r.system_id AND r.status = 'active'\nLEFT JOIN system_logs sl ON s.id = sl.system_id\nWHERE s.current_stage != 'complete'\nGROUP BY s.id, s.name, s.category, s.current_stage\nORDER BY last_activity DESC\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "cb716e91-8c7c-471e-9460-9d55f6001958",
+      "name": "Get System Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        4592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const systems = $input.all();\nlet message = '📊 *SBS System Status*\\n\\n';\n\nif (systems.length === 0) {\n  message += 'No active systems found.\\n\\nCreate your first system to get started!';\n} else {\n  systems.forEach((item, index) => {\n    const s = item.json;\n    const progress = Math.round((s.completed_steps / s.total_steps) * 100);\n    message += `${index + 1}. *${s.name}*\\n`;\n    message += `   📁 ${s.category}\\n`;\n    message += `   ⚙️ Stage: ${s.current_stage}\\n`;\n    message += `   📈 Progress: ${progress}% (${s.completed_steps}/${s.total_steps})\\n`;\n    message += `   🔄 Active Routines: ${s.active_routines}\\n`;\n    message += `\\n`;\n  });\n}\n\nreturn [{ json: { message } }];"
+      },
+      "id": "a5a69e34-385b-4bc4-a309-633341683b65",
+      "name": "Format Status Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        4592
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $('Telegram Trigger').item.json.message.chat.id,\n  \"message\": $json.message,\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "bb8bc8ae-4ead-4a86-bc9c-5ab81e9ce320",
+      "name": "Send Status Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        432,
+        4592
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $json.message.chat.id,\n  \"message\": \"🤖 *SBS Telegram Bot Commands*\\n\\n*Routine Management:*\\n`/complete [routine_id]` - Mark routine as complete\\n`/skip [routine_id]` - Skip today's routine\\n`/create_routine [system_id] [name] [description] [day]` - Create new routine\\n\\n*System Management:*\\n`/advance [system_id]` - Move system to next stage\\n`/status` - View all active systems\\n\\n*Information:*\\n`/help` - Show this help message\\n\\n*Examples:*\\n`/create_routine 5 Exercise \\\"30 min workout\\\" Monday`\\n`/create_routine 3 Reading \\\"Read for 20 minutes\\\" daily`\\n\\n*Quick Tip:* Use the routine_id from daily reminders to quickly complete or skip tasks!\",\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "b3f5d333-ce11-48cd-90c0-9b48219de592",
+      "name": "Send Help Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -16,
+        5072
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"chat_id\": $json.message.chat.id,\n  \"message\": \"❓ *Unknown Command*\\n\\nI didn't recognize that command.\\n\\nUse `/help` to see available commands.\",\n  \"parse_mode\": \"Markdown\"\n} }}",
+        "options": {}
+      },
+      "id": "ebd3c12b-4603-4f1e-b28e-c74c0d8fb602",
+      "name": "Send Default Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -16,
+        5264
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/complete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    },
+                    "id": "c7d66374-e1d9-4605-a31d-367dc6137927"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Complete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0861aa65-6e52-4377-a901-89a8087639aa",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/skip",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Skip"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c0129d84-7cbf-4b5a-b011-40bb9e1e54c6",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/advance",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Advance"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "d9fe9fb1-58fa-4978-b7f8-3e8ce44c6ec5",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/status",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Status"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "create_routine_check",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/create_routine",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CreateRoutine"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0c4fa2e1-c6f4-4c74-a6ee-0bfa754d011f",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/help",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Help"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "569b16b5-e98d-4175-9399-95a253792715",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Default"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -240,
+        4512
+      ],
+      "id": "5c8d19b4-5d85-4617-ad9c-216e36af98a1",
+      "name": "Switch"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Parse Create Routine Command": {
+      "main": [
+        [
+          {
+            "node": "Validate Create Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Create Command": {
+      "main": [
+        [
+          {
+            "node": "Verify System Exists",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Create Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify System Exists": {
+      "main": [
+        [
+          {
+            "node": "Check System Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check System Exists": {
+      "main": [
+        [
+          {
+            "node": "Create New Routine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send System Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create New Routine": {
+      "main": [
+        [
+          {
+            "node": "Log Routine Creation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Routine Creation": {
+      "main": [
+        [
+          {
+            "node": "Send Routine Created Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Skill Progression1": {
+      "main": [
+        [
+          {
+            "node": "Send Complete Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Skill Progression Advance1": {
+      "main": [
+        [
+          {
+            "node": "Send Advance Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Routine": {
+      "main": [
+        [
+          {
+            "node": "Trigger Skill Progression1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Routine": {
+      "main": [
+        [
+          {
+            "node": "Send Skip Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Advance System Stage": {
+      "main": [
+        [
+          {
+            "node": "Trigger Skill Progression Advance1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get System Status": {
+      "main": [
+        [
+          {
+            "node": "Format Status Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Status Message": {
+      "main": [
+        [
+          {
+            "node": "Send Status Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Complete Routine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Routine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Advance System Stage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get System Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Telegram Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Default Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "B0bighnaSSF6r3kk",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

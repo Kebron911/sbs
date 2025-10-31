@@ -1,0 +1,490 @@
+{
+  "name": "INTEGRATED_SYSTEM_BUILDER",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-integrated-system",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_create_integrated_system",
+      "name": "Webhook - Create Integrated SBS System",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "create-integrated-sbs-system"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "user_id_check",
+              "leftValue": "={{ $json.body.user_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "system_name_check",
+              "leftValue": "={{ $json.body.system_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "category_check",
+              "leftValue": "={{ $json.body.category }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate_input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO systems (user_id, name, category, current_stage, purpose, description, created_at) VALUES ($1, $2, $3, 'define', $4, $5, NOW()) RETURNING *",
+        "options": {}
+      },
+      "id": "create_system",
+      "name": "Create System",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-data",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"user_id\": $('Create System').item.json.user_id,\n  \"include_skills\": false,\n  \"include_habits\": false,\n  \"include_systems\": false,\n  \"include_achievements\": false\n} }}",
+        "options": {}
+      },
+      "id": "get_character_id",
+      "name": "Get Character ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Map system categories to skill names\nconst systemCategory = $('Create System').item.json.category;\nconst categoryToSkillMap = {\n  'health': 'Health & Fitness',\n  'wealth': 'Career & Work',\n  'mindset': 'Learning & Knowledge',\n  'purpose': 'Social & Relationships',\n  'general': 'Learning & Knowledge' // default\n};\n\nconst targetSkill = categoryToSkillMap[systemCategory] || 'Learning & Knowledge';\nconst characterId = $('Get Character ID').item.json.id;\n\nreturn {\n  json: {\n    character_id: characterId,\n    target_skill: targetSkill,\n    system_id: $('Create System').item.json.id,\n    system_name: $('Create System').item.json.name\n  }\n};"
+      },
+      "id": "map_system_to_skill",
+      "name": "Map System to Skill",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM skills WHERE character_id = $1 AND name = $2",
+        "options": {}
+      },
+      "id": "check_skill_exists",
+      "name": "Check if Skill Exists",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1250,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "skill_exists",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "skill_needs_creation",
+      "name": "Skill Needs Creation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO skills (character_id, name, xp, level, unlocked) VALUES ($1, $2, 0, 1, true) RETURNING *",
+        "options": {}
+      },
+      "id": "create_skill",
+      "name": "Create Target Skill",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1650,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE skills SET unlocked = true WHERE character_id = $1 AND name = $2 RETURNING *",
+        "options": {}
+      },
+      "id": "unlock_existing_skill",
+      "name": "Unlock Existing Skill",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1650,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-ai-content",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"content_type\": \"habit_suggestion\",\n  \"prompt\": `Generate 3-4 specific, actionable habits for a ${$('Create System').item.json.category} system called '${$('Map System to Skill').item.json.system_name}'. Focus on daily practices that build this system progressively.`,\n  \"context_data\": {\n    \"system_name\": $('Map System to Skill').item.json.system_name,\n    \"system_category\": $('Create System').item.json.category,\n    \"character_id\": $('Map System to Skill').item.json.character_id\n  },\n  \"character_id\": $('Map System to Skill').item.json.character_id,\n  \"ai_provider\": \"openai\",\n  \"model\": \"gpt-4\",\n  \"temperature\": 0.7\n} }}",
+        "options": {}
+      },
+      "id": "generate_system_habits",
+      "name": "Generate System Habits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI-generated habits and format for database\nconst aiResponse = $('Generate System Habits').item.json;\nconst systemName = $('Map System to Skill').item.json.system_name;\nconst characterId = $('Map System to Skill').item.json.character_id;\nconst systemId = $('Create System').item.json.id;\n\nlet habits = [];\n\nif (aiResponse.success && aiResponse.parsed_content) {\n  // AI successfully generated structured habits\n  const aiHabits = Array.isArray(aiResponse.parsed_content) ? aiResponse.parsed_content : [aiResponse.parsed_content];\n  \n  habits = aiHabits.map((habit, index) => ({\n    character_id: characterId,\n    name: habit.name || `${systemName} - Habit ${index + 1}`,\n    description: habit.description || habit.description || 'AI-generated habit for system development',\n    type: 'good',\n    frequency: habit.frequency || 'daily',\n    streak: 0,\n    system_generated: true,\n    source_system_id: systemId,\n    ai_generated: true\n  }));\n} else {\n  // Fallback to simple system-based habits if AI fails\n  const category = $('Create System').item.json.category;\n  const fallbackHabits = {\n    'health': [\n      { name: `${systemName} - Daily Activity`, description: 'Daily physical activity' },\n      { name: `${systemName} - Health Check`, description: 'Daily health awareness' }\n    ],\n    'wealth': [\n      { name: `${systemName} - Financial Review`, description: 'Daily financial awareness' },\n      { name: `${systemName} - Skill Practice`, description: 'Daily skill development' }\n    ],\n    'mindset': [\n      { name: `${systemName} - Reflection`, description: 'Daily self-reflection practice' },\n      { name: `${systemName} - Learning`, description: 'Daily learning and growth' }\n    ],\n    'purpose': [\n      { name: `${systemName} - Connection`, description: 'Daily meaningful connection' },\n      { name: `${systemName} - Contribution`, description: 'Daily contribution to others' }\n    ],\n    'general': [\n      { name: `${systemName} - Check-in`, description: 'Daily system review' }\n    ]\n  };\n  \n  const fallback = fallbackHabits[category] || fallbackHabits['general'];\n  habits = fallback.map(habit => ({\n    character_id: characterId,\n    name: habit.name,\n    description: habit.description,\n    type: 'good',\n    frequency: 'daily',\n    streak: 0,\n    system_generated: true,\n    source_system_id: systemId,\n    ai_generated: false\n  }));\n}\n\nreturn habits.map(habit => ({ json: habit }));"
+      },
+      "id": "process_ai_habits",
+      "name": "Process AI Habits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO habits (character_id, name, description, type, frequency, streak, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *",
+        "options": {}
+      },
+      "id": "create_system_habits",
+      "name": "Create System Habits",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2250,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-progression",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Map System to Skill').item.json.character_id,\n  \"xpGained\": 50,\n  \"skillName\": $('Map System to Skill').item.json.target_skill,\n  \"skillXp\": 25,\n  \"source\": \"system_creation\"\n} }}",
+        "options": {}
+      },
+      "id": "award_system_creation_xp",
+      "name": "Award System Creation XP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \n  \"success\": true, \n  \"system\": {\n    \"id\": $('Create System').item.json.id,\n    \"name\": $('Create System').item.json.name,\n    \"category\": $('Create System').item.json.category,\n    \"stage\": $('Create System').item.json.current_stage\n  },\n  \"skill_integration\": {\n    \"target_skill\": $('Map System to Skill').item.json.target_skill,\n    \"skill_unlocked\": true\n  },\n  \"habits_created\": $('Generate System Habits').all().length,\n  \"habits\": $('Create System Habits').all().map(h => ({ name: h.json.name, description: h.json.description })),\n  \"xp_awarded\": 50,\n  \"message\": \"Integrated SBS system '\" + $('Create System').item.json.name + \"' created with skill integration and automated habits!\"\n} }}",
+        "options": {}
+      },
+      "id": "respond_success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": false, \"error\": \"Missing required fields: user_id, system_name, and category are required\" } }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "respond_error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        650,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "webhook_create_integrated_system": {
+      "main": [
+        [
+          {
+            "node": "validate_input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate_input": {
+      "main": [
+        [
+          {
+            "node": "create_system",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "respond_error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_system": {
+      "main": [
+        [
+          {
+            "node": "get_character_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_character_id": {
+      "main": [
+        [
+          {
+            "node": "map_system_to_skill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "map_system_to_skill": {
+      "main": [
+        [
+          {
+            "node": "check_skill_exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_skill_exists": {
+      "main": [
+        [
+          {
+            "node": "skill_needs_creation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "skill_needs_creation": {
+      "main": [
+        [
+          {
+            "node": "create_skill",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "unlock_existing_skill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_skill": {
+      "main": [
+        [
+          {
+            "node": "generate_system_habits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "unlock_existing_skill": {
+      "main": [
+        [
+          {
+            "node": "generate_system_habits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generate_system_habits": {
+      "main": [
+        [
+          {
+            "node": "create_system_habits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create_system_habits": {
+      "main": [
+        [
+          {
+            "node": "log_system_creation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log_system_creation": {
+      "main": [
+        [
+          {
+            "node": "award_system_creation_xp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "award_system_creation_xp": {
+      "main": [
+        [
+          {
+            "node": "respond_success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "integrated-sbs-system",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

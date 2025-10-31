@@ -1,0 +1,353 @@
+{
+  "name": "System Spawner",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "system-created",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-new-system",
+      "name": "Webhook - New System Created",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "sbs-system-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_steps (system_id, step, status, notes) VALUES\n($1, 'define', 'complete', 'System creation completed'),\n($1, 'design', 'pending', 'Design system architecture'),\n($1, 'build', 'pending', 'Build working components'),\n($1, 'automate', 'pending', 'Add triggers and schedules'),\n($1, 'review', 'pending', 'Schedule review cycle')\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [\n  $json.body.system_id\n] }}"
+        }
+      },
+      "id": "insert-lifecycle-steps",
+      "name": "Insert Lifecycle Steps",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO routines (name, system_id, day_of_week, description, status)\nSELECT \n  $1 || ' - ' || day,\n  $2,\n  day,\n  'Auto-generated routine for ' || $1,\n  'active'\nFROM unnest(ARRAY['Monday', 'Friday']) AS day\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [\n  $json.body.name,\n  $json.body.system_id\n] }}"
+        }
+      },
+      "id": "create-default-routines",
+      "name": "Create Default Routines",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-system-stage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.body.system_id }}"
+            },
+            {
+              "name": "action",
+              "value": "set_stage"
+            },
+            {
+              "name": "target_stage",
+              "value": "design"
+            },
+            {
+              "name": "source",
+              "value": "spawner"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ { spawned_at: new Date().toISOString() } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "advance-to-design",
+      "name": "Advance Stage to Design (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.body.system_id }}"
+            },
+            {
+              "name": "event",
+              "value": "system_spawned"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  name: $json.body.name,\n  category: $json.body.category,\n  timestamp: new Date().toISOString()\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-spawn-event",
+      "name": "Log System Spawn Event (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1050,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-telegram-response",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "message",
+              "value": "=🎉 *New System Created*\\n\\n📋 *Name:* {{ $json.body.name }}\\n🗂️ *Category:* {{ $json.body.category }}\\n🎯 *Purpose:* {{ $json.body.purpose }}\\n\\n✅ Lifecycle steps initialized\\n📅 Default routines created\\n🚀 Stage advanced to: *Design*\\n\\n*Next Step:* Define your system architecture and data flows."
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-telegram-notification",
+      "name": "Send Telegram Notification (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1250,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"system_id\": $json.body.system_id,\n  \"message\": \"System spawned successfully\",\n  \"next_stage\": \"design\"\n} }}",
+        "options": {
+          "responseCode": 201
+        }
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.system_id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "validate-input",
+      "name": "Validate System ID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        450,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Missing required field: system_id\"\n} }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        450,
+        50
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - New System Created": {
+      "main": [
+        [
+          {
+            "node": "Validate System ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate System ID": {
+      "main": [
+        [
+          {
+            "node": "Insert Lifecycle Steps",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Lifecycle Steps": {
+      "main": [
+        [
+          {
+            "node": "Create Default Routines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Default Routines": {
+      "main": [
+        [
+          {
+            "node": "Advance Stage to Design",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Advance Stage to Design": {
+      "main": [
+        [
+          {
+            "node": "Log System Spawn Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System Spawn Event": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "tags": [],
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

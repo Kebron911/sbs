@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N8N Workflow Import Guide</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        .header { background: #ff6d5a; color: white; padding: 20px; border-radius: 8px; }
+        .section { margin: 20px 0; padding: 15px; border-left: 4px solid #ff6d5a; }
+        .workflow-list { background: #f5f5f5; padding: 15px; border-radius: 5px; }
+        .important { background: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffc107; }
+        .step { margin: 10px 0; padding: 10px; background: #e7f3ff; border-radius: 5px; }
+        .file-path { font-family: monospace; background: #f8f9fa; padding: 2px 6px; border-radius: 3px; }
+        ul { list-style-type: none; padding-left: 0; }
+        li { margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px; }
+        .priority-high { border-left: 4px solid #dc3545; }
+        .priority-medium { border-left: 4px solid #ffc107; }
+        .priority-low { border-left: 4px solid #28a745; }
+        .button { display: inline-block; padding: 10px 20px; background: #ff6d5a; color: white; text-decoration: none; border-radius: 5px; margin: 5px; }
+        .directory { font-weight: bold; color: #0066cc; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 N8N Workflow Import Guide</h1>
+        <p>Complete guide to importing your 56 workflows into N8N</p>
+    </div>
+
+    <div class="important">
+        <h3>⚠️ Import Order Matters!</h3>
+        <p>Import <strong>subflows first</strong>, then main workflows. This ensures all dependencies are available.</p>
+    </div>
+
+    <div class="section">
+        <h2>🎯 Quick Start</h2>
+        <div class="step">
+            <strong>Step 1:</strong> Open N8N at <a href="http://localhost:15678" target="_blank">http://localhost:15678</a>
+        </div>
+        <div class="step">
+            <strong>Step 2:</strong> For each workflow below, click "Create Workflow" → Menu (⋮) → "Import from File"
+        </div>
+        <div class="step">
+            <strong>Step 3:</strong> Navigate to <span class="file-path">/home/ai-dragon/git/ai/sbs/n8n/</span>
+        </div>
+        <div class="step">
+            <strong>Step 4:</strong> Import in the order listed below
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📋 Import Order & Priority</h2>
+        
+        <h3 class="priority-high">🔴 FIRST: Critical Subflows (Import These First)</h3>
+        <div class="workflow-list">
+            <ul>
+                <li class="priority-high">📄 <span class="file-path">subflows/validation_responses/validate_input.json</span></li>
+                <li class="priority-high">📄 <span class="file-path">subflows/database_operations/database_query.json</span></li>
+                <li class="priority-high">📄 <span class="file-path">subflows/database_operations/database_transaction_handler.json</span></li>
+                <li class="priority-high">📄 <span class="file-path">subflows/communication/send_telegram_response.json</span></li>
+                <li class="priority-high">📄 <span class="file-path">subflows/communication/telegram_command_parser.json</span></li>
+                <li class="priority-high">📄 <span class="file-path">subflows/logging_events/log_event.json</span></li>
+            </ul>
+        </div>
+
+        <h3 class="priority-medium">🟡 SECOND: Core Systems</h3>
+        <div class="workflow-list">
+            <ul>
+                <li class="priority-medium">⚙️ <span class="file-path">core_systems/orchestrator.json</span></li>
+                <li class="priority-medium">⚙️ <span class="file-path">core_systems/spawner.json</span></li>
+                <li class="priority-medium">⚙️ <span class="file-path">core_systems/init_user_setup.json</span></li>
+                <li class="priority-medium">⚙️ <span class="file-path">core_systems/cron_manager.json</span></li>
+                <li class="priority-medium">⚙️ <span class="file-path">core_systems/pg_listener.json</span></li>
+                <li class="priority-medium">⚙️ <span class="file-path">core_systems/integrated_system_builder.json</span></li>
+            </ul>
+        </div>
+
+        <h3 class="priority-low">🟢 THIRD: Game Engines & Features</h3>
+        <div class="workflow-list">
+            <ul>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/achievement_unlock.json</span></li>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/damage_calc.json</span></li>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/goal_manager.json</span></li>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/habit_checkin.json</span></li>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/prestige_calc.json</span></li>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/quest_engine.json</span></li>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/routine_engine.json</span></li>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/routine_manager.json</span></li>
+                <li class="priority-low">🎮 <span class="file-path">game_engines/skill_progression.json</span></li>
+            </ul>
+        </div>
+
+        <h3 class="priority-low">🟢 FOURTH: Administration & User Interfaces</h3>
+        <div class="workflow-list">
+            <ul>
+                <li class="priority-low">👥 <span class="file-path">administration/admin_scoring_override.json</span></li>
+                <li class="priority-low">👥 <span class="file-path">administration/database_maintenance.json</span></li>
+                <li class="priority-low">🖥️ <span class="file-path">user_interfaces/manual_task_creator.json</span></li>
+                <li class="priority-low">🖥️ <span class="file-path">user_interfaces/shop_check_flow.json</span></li>
+                <li class="priority-low">🖥️ <span class="file-path">user_interfaces/telegram_bot.json</span></li>
+            </ul>
+        </div>
+
+        <h3 class="priority-low">🟢 FIFTH: AI & Remaining Workflows</h3>
+        <div class="workflow-list">
+            <ul>
+                <li class="priority-low">🤖 <span class="file-path">ai_workflows/ai_missions_corrupted.json</span></li>
+                <li class="priority-low">🤖 <span class="file-path">ai_workflows/ai_missions.json</span></li>
+                <li class="priority-low">🤖 <span class="file-path">ai_workflows/event_seeder.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/ai_operations/ai_content_generation.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/ai_operations/ai_response_parser.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/character_management/character_economy_update.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/character_management/character_level_progression.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/database_maintenance/database_analytics_reporter.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/database_maintenance/database_backup_recovery.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/database_maintenance/database_cleanup_manager.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/database_maintenance/database_health_analyzer.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/database_maintenance/database_migration_manager.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/database_maintenance/database_performance_monitor.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/database_maintenance/database_security_auditor.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/database_maintenance/sbs_data_optimizer.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/game_mechanics/level_xp_calculator.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/game_mechanics/reward_calculation.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/game_mechanics/streak_calculation.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/game_mechanics/system_stage_management.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/game_mechanics/trigger_achievement_check.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/game_mechanics/trigger_skill_progression.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/logging_events/enhanced_system_logs_writer.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/logging_events/log_system_event.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/utility_functions/conditional_logic_router.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/utility_functions/http_webhook_router.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/utility_functions/timestamp_generator.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/validation_responses/error_response_handler.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/validation_responses/respond_to_webhook.json</span></li>
+                <li class="priority-low">🔧 <span class="file-path">subflows/validation_responses/standardized_response.json</span></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>💡 Pro Tips</h2>
+        <ul>
+            <li><strong>Naming:</strong> Keep the original filenames when importing</li>
+            <li><strong>Errors:</strong> If a workflow has missing dependencies, import the subflows first</li>
+            <li><strong>Testing:</strong> Test core workflows before importing game engines</li>
+            <li><strong>Backup:</strong> N8N will save everything automatically</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>🔧 File Locations</h2>
+        <p><strong>Base Directory:</strong> <span class="file-path">/home/ai-dragon/git/ai/sbs/n8n/</span></p>
+        <div class="workflow-list">
+            <p><span class="directory">📁 subflows/</span> - Reusable workflow components (import first!)</p>
+            <p><span class="directory">📁 core_systems/</span> - Main system orchestration</p>
+            <p><span class="directory">📁 game_engines/</span> - Game mechanics and logic</p>
+            <p><span class="directory">📁 administration/</span> - Admin tools and overrides</p>
+            <p><span class="directory">📁 user_interfaces/</span> - User interaction workflows</p>
+            <p><span class="directory">📁 ai_workflows/</span> - AI-powered features</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🚀 Quick Links</h2>
+        <a href="http://localhost:15678" class="button" target="_blank">Open N8N</a>
+        <a href="file:///home/ai-dragon/git/ai/sbs/n8n" class="button" target="_blank">Open File Directory</a>
+    </div>
+
+    <div class="important">
+        <h3>📊 Summary</h3>
+        <p>Total workflows to import: <strong id="workflow-count">Loading...</strong></p>
+        <p>Estimated time: <strong>15-30 minutes</strong> (depending on your import speed)</p>
+    </div>
+
+    <script>
+        // Count total workflows
+        const workflowItems = document.querySelectorAll('li');
+        document.getElementById('workflow-count').textContent = workflowItems.length;
+    </script>
+
+</body>
+</html>

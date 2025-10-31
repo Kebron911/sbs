@@ -1,0 +1,338 @@
+{
+  "name": "HTTP Webhook Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-webhook-router",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_router",
+      "name": "Webhook - HTTP Router",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-webhook-router"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal HTTP Webhook Router\nconst requestData = $json;\nconst targetWebhook = requestData.target_webhook;\nconst method = requestData.method || 'POST';\nconst baseUrl = requestData.base_url || 'http://localhost:5678/webhook';\nconst headers = requestData.headers || {};\nconst bodyData = requestData.body_data || requestData.data || {};\nconst queryParams = requestData.query_params || {};\nconst timeout = requestData.timeout || 30000;\nconst retryOnFailure = requestData.retry_on_failure || false;\n\n// Validate required fields\nif (!targetWebhook) {\n  return {\n    json: {\n      success: false,\n      error: 'target_webhook is required',\n      statusCode: 400\n    }\n  };\n}\n\n// Build complete URL\nlet fullUrl;\nif (targetWebhook.startsWith('http')) {\n  // Full URL provided\n  fullUrl = targetWebhook;\n} else if (targetWebhook.startsWith('/')) {\n  // Relative path provided\n  fullUrl = baseUrl.replace(/\\/webhook$/, '') + targetWebhook;\n} else {\n  // Just webhook name provided\n  fullUrl = `${baseUrl}/${targetWebhook}`;\n}\n\n// Add query parameters to URL if provided\nif (Object.keys(queryParams).length > 0) {\n  const urlParams = new URLSearchParams(queryParams);\n  fullUrl += (fullUrl.includes('?') ? '&' : '?') + urlParams.toString();\n}\n\n// Standard headers\nconst standardHeaders = {\n  'Content-Type': 'application/json',\n  'User-Agent': 'n8n-sbs-subflow-router/1.0',\n  ...headers\n};\n\n// Add authentication headers if provided\nif (requestData.auth_token) {\n  standardHeaders['Authorization'] = `Bearer ${requestData.auth_token}`;\n}\nif (requestData.api_key) {\n  standardHeaders['X-API-Key'] = requestData.api_key;\n}\n\n// Prepare request configuration\nconst requestConfig = {\n  url: fullUrl,\n  method: method.toUpperCase(),\n  headers: standardHeaders,\n  timeout: timeout\n};\n\n// Add body for non-GET requests\nif (method.toUpperCase() !== 'GET' && Object.keys(bodyData).length > 0) {\n  requestConfig.body = bodyData;\n  requestConfig.json = true;\n}\n\n// Request metadata for logging/debugging\nconst requestMetadata = {\n  target_webhook: targetWebhook,\n  full_url: fullUrl,\n  method: method.toUpperCase(),\n  has_auth: !!(requestData.auth_token || requestData.api_key),\n  body_size: JSON.stringify(bodyData).length,\n  timeout: timeout,\n  retry_enabled: retryOnFailure,\n  generated_at: new Date().toISOString()\n};\n\nreturn {\n  json: {\n    request_config: requestConfig,\n    request_metadata: requestMetadata,\n    retry_on_failure: retryOnFailure\n  }\n};"
+      },
+      "id": "build_request",
+      "name": "Build HTTP Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.request_config.method }}",
+        "url": "={{ $json.request_config.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": "={{ Object.entries($json.request_config.headers).map(([key, value]) => ({ name: key, value: value })) }}"
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_config.body || {} }}",
+        "options": {
+          "timeout": "={{ $json.request_config.timeout }}"
+        }
+      },
+      "id": "execute_request",
+      "name": "Execute HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $('Build HTTP Request').item.json.retry_on_failure }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check_retry_enabled",
+      "name": "Check Retry Enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        650,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retry HTTP request with exponential backoff\nconst originalRequest = $('Build HTTP Request').item.json;\nconst retryAttempt = $json.retry_attempt || 1;\nconst maxRetries = 3;\n\nif (retryAttempt >= maxRetries) {\n  return {\n    json: {\n      success: false,\n      error: 'Maximum retry attempts exceeded',\n      retry_attempt: retryAttempt,\n      max_retries: maxRetries,\n      statusCode: 500\n    }\n  };\n}\n\n// Calculate delay (exponential backoff: 1s, 2s, 4s)\nconst delay = Math.pow(2, retryAttempt - 1) * 1000;\n\n// Wait before retry\nconst startTime = Date.now();\nwhile (Date.now() - startTime < delay) {\n  // Simple delay loop\n}\n\nreturn {\n  json: {\n    ...originalRequest,\n    retry_attempt: retryAttempt + 1,\n    retry_delay: delay\n  }\n};"
+      },
+      "id": "retry_logic",
+      "name": "Retry Logic with Backoff",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.request_config.method }}",
+        "url": "={{ $json.request_config.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": "={{ Object.entries($json.request_config.headers).map(([key, value]) => ({ name: key, value: value })) }}"
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_config.body || {} }}",
+        "options": {
+          "timeout": "={{ $json.request_config.timeout }}"
+        }
+      },
+      "id": "retry_request",
+      "name": "Retry HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1050,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format successful HTTP response\nconst httpResponse = $json;\nconst requestMetadata = $('Build HTTP Request').item.json.request_metadata;\n\n// Extract response data\nconst responseData = httpResponse;\nconst statusCode = responseData.statusCode || 200;\n\n// Response metadata\nconst responseMetadata = {\n  status_code: statusCode,\n  success: statusCode >= 200 && statusCode < 300,\n  response_size: JSON.stringify(responseData).length,\n  target_webhook: requestMetadata.target_webhook,\n  method: requestMetadata.method,\n  response_time: new Date().toISOString(),\n  retry_used: false\n};\n\nreturn {\n  json: {\n    success: true,\n    data: responseData,\n    request_metadata: requestMetadata,\n    response_metadata: responseMetadata,\n    statusCode: statusCode\n  }\n};"
+      },
+      "id": "format_success_response",
+      "name": "Format Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format retry success response\nconst httpResponse = $json;\nconst requestMetadata = $('Build HTTP Request').item.json.request_metadata;\nconst retryData = $('Retry Logic with Backoff').item.json;\n\n// Extract response data\nconst responseData = httpResponse;\nconst statusCode = responseData.statusCode || 200;\n\n// Response metadata with retry info\nconst responseMetadata = {\n  status_code: statusCode,\n  success: statusCode >= 200 && statusCode < 300,\n  response_size: JSON.stringify(responseData).length,\n  target_webhook: requestMetadata.target_webhook,\n  method: requestMetadata.method,\n  response_time: new Date().toISOString(),\n  retry_used: true,\n  retry_attempt: retryData.retry_attempt,\n  retry_delay: retryData.retry_delay\n};\n\nreturn {\n  json: {\n    success: true,\n    data: responseData,\n    request_metadata: requestMetadata,\n    response_metadata: responseMetadata,\n    statusCode: statusCode\n  }\n};"
+      },
+      "id": "format_retry_success",
+      "name": "Format Retry Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle HTTP request errors\nconst error = $json;\nconst requestMetadata = $('Build HTTP Request').item.json.request_metadata;\n\nlet errorMessage = 'HTTP request failed';\nlet statusCode = 500;\n\nif (error.message) {\n  if (error.message.includes('timeout')) {\n    errorMessage = 'Request timeout';\n    statusCode = 408;\n  } else if (error.message.includes('ECONNREFUSED')) {\n    errorMessage = 'Connection refused - service unavailable';\n    statusCode = 503;\n  } else if (error.message.includes('ENOTFOUND')) {\n    errorMessage = 'Host not found';\n    statusCode = 404;\n  }\n}\n\nreturn {\n  json: {\n    success: false,\n    error: errorMessage,\n    error_details: error.message || 'Unknown HTTP error',\n    request_metadata: requestMetadata,\n    statusCode: statusCode\n  }\n};"
+      },
+      "id": "handle_request_error",
+      "name": "Handle Request Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "success_response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "retry_success_response",
+      "name": "Retry Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1450,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "error_response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "webhook_router": {
+      "main": [
+        [
+          {
+            "node": "build_request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build_request": {
+      "main": [
+        [
+          {
+            "node": "execute_request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "execute_request": {
+      "main": [
+        [
+          {
+            "node": "format_success_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "check_retry_enabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_retry_enabled": {
+      "main": [
+        [
+          {
+            "node": "retry_logic",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "handle_request_error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "retry_logic": {
+      "main": [
+        [
+          {
+            "node": "retry_request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "retry_request": {
+      "main": [
+        [
+          {
+            "node": "format_retry_success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "handle_request_error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format_success_response": {
+      "main": [
+        [
+          {
+            "node": "success_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format_retry_success": {
+      "main": [
+        [
+          {
+            "node": "retry_success_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_request_error": {
+      "main": [
+        [
+          {
+            "node": "error_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {},
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-28T20:00:00.000Z",
+  "versionId": "1",
+  "active": true,
+  "meta": {},
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

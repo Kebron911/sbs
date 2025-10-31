@@ -1,0 +1,269 @@
+{
+  "name": "🎯 SBS Data Optimizer",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- System Category Performance Insights\n-- Comprehensive analysis of SBS system performance across different categories\n\nWITH category_base_stats AS (\n  -- Calculate fundamental metrics for each system category\n  SELECT \n    s.category as system_category,\n    COUNT(*) as total_systems,\n    COUNT(CASE WHEN s.is_active = true THEN 1 END) as active_systems,\n    COUNT(CASE WHEN s.current_stage = s.total_stages THEN 1 END) as completed_systems,\n    \n    -- Progression metrics\n    ROUND(AVG(s.current_stage::numeric / NULLIF(s.total_stages, 0) * 100), 2) as avg_completion_percentage,\n    ROUND(AVG(s.total_stages), 1) as avg_total_stages,\n    ROUND(AVG(s.current_stage), 1) as avg_current_stage,\n    \n    -- Time metrics\n    AVG(EXTRACT(EPOCH FROM (COALESCE(s.updated_at, s.created_at) - s.created_at)) / 86400.0) as avg_days_active,\n    \n    -- Activity tracking\n    COUNT(CASE WHEN s.updated_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as systems_active_7_days,\n    COUNT(CASE WHEN s.updated_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as systems_active_30_days,\n    \n    -- Routine engagement\n    AVG((SELECT COUNT(*) FROM routines r WHERE r.sbs_system_id = s.id)) as avg_routines_per_system,\n    SUM((SELECT COUNT(*) FROM routines r WHERE r.sbs_system_id = s.id)) as total_routines\n    \n  FROM sbs_systems s\n  GROUP BY s.category\n)\n\n-- Final comprehensive category performance insights\nSELECT \n  'category_performance_insights' as analysis_type,\n  CURRENT_TIMESTAMP as analysis_timestamp,\n  \n  -- Overall category summary\n  json_build_object(\n    'total_categories', (SELECT COUNT(DISTINCT system_category) FROM category_base_stats),\n    'total_systems', (SELECT SUM(total_systems) FROM category_base_stats),\n    'total_active_systems', (SELECT SUM(active_systems) FROM category_base_stats),\n    'overall_completion_rate', (\n      SELECT ROUND(\n        SUM(completed_systems)::numeric / NULLIF(SUM(total_systems), 0) * 100, \n        2\n      ) FROM category_base_stats\n    )\n  ) as summary_stats,\n  \n  -- Detailed category performance\n  (\n    SELECT json_agg(\n      json_build_object(\n        'category', system_category,\n        'total_systems', total_systems,\n        'active_systems', active_systems,\n        'completed_systems', completed_systems,\n        'avg_completion_percentage', avg_completion_percentage,\n        'avg_total_stages', avg_total_stages,\n        'avg_days_active', ROUND(avg_days_active, 1),\n        'systems_active_7_days', systems_active_7_days,\n        'systems_active_30_days', systems_active_30_days,\n        'avg_routines_per_system', ROUND(avg_routines_per_system, 1),\n        'total_routines', total_routines\n      )\n    )\n    FROM category_base_stats\n    ORDER BY avg_completion_percentage DESC\n  ) as category_details\n  \nORDER BY analysis_timestamp DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "f22d9ae6-3680-4929-94e9-49c55fc8f439",
+      "name": "System Category Performance Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -640,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Custom Reward Effectiveness Analysis\n-- Comprehensive analysis of custom reward system performance and impact on user engagement\n\nWITH reward_base_metrics AS (\n  -- Analyze basic reward metrics and usage patterns\n  SELECT \n    r.id as reward_id,\n    r.name as reward_name,\n    r.description as reward_description,\n    r.category as reward_category,\n    r.cost_points as reward_cost,\n    r.is_active as is_reward_active,\n    r.created_at as reward_created_at,\n    \n    -- User metrics related to rewards\n    COUNT(DISTINCT ur.user_id) as unique_users_earned,\n    COUNT(ur.id) as total_redemptions,\n    \n    -- Time analysis\n    AVG(EXTRACT(EPOCH FROM (ur.redeemed_at - ur.earned_at)) / 86400.0) as avg_days_to_redeem,\n    COUNT(CASE WHEN ur.redeemed_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as redemptions_7_days,\n    COUNT(CASE WHEN ur.redeemed_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as redemptions_30_days,\n    \n    -- User satisfaction\n    AVG(ur.satisfaction_rating) as avg_reward_satisfaction,\n    \n    -- Cost effectiveness\n    ROUND(COUNT(ur.id)::numeric / NULLIF(r.cost_points, 0), 4) as redemption_per_point,\n    \n    -- Recent activity\n    MAX(ur.redeemed_at) as last_redemption_date,\n    MIN(ur.redeemed_at) as first_redemption_date\n    \n  FROM rewards r\n  LEFT JOIN user_rewards ur ON r.id = ur.reward_id AND ur.status = 'redeemed'\n  WHERE r.is_active = true\n  GROUP BY r.id, r.name, r.description, r.category, r.cost_points, r.is_active, r.created_at\n)\n\n-- Final comprehensive reward effectiveness analysis\nSELECT \n  'reward_effectiveness_analysis' as analysis_type,\n  CURRENT_TIMESTAMP as analysis_timestamp,\n  \n  -- Overall reward system summary\n  json_build_object(\n    'total_rewards', (SELECT COUNT(*) FROM reward_base_metrics),\n    'active_rewards', (SELECT COUNT(*) FROM reward_base_metrics WHERE total_redemptions > 0),\n    'total_redemptions', (SELECT SUM(total_redemptions) FROM reward_base_metrics),\n    'avg_system_satisfaction', (SELECT ROUND(AVG(avg_reward_satisfaction), 2) FROM reward_base_metrics WHERE avg_reward_satisfaction IS NOT NULL)\n  ) as system_summary,\n  \n  -- Reward category performance\n  (\n    SELECT json_agg(\n      json_build_object(\n        'category', reward_category,\n        'rewards_count', COUNT(*),\n        'active_rewards', COUNT(CASE WHEN total_redemptions > 0 THEN 1 END),\n        'total_redemptions', SUM(total_redemptions),\n        'avg_satisfaction', ROUND(AVG(avg_reward_satisfaction), 2),\n        'avg_cost', ROUND(AVG(reward_cost), 1),\n        'recent_redemptions_30_days', SUM(redemptions_30_days)\n      )\n    )\n    FROM reward_base_metrics\n    GROUP BY reward_category\n    ORDER BY SUM(total_redemptions) DESC\n  ) as category_performance\n  \nORDER BY analysis_timestamp DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "acc9db10-d3bd-4a17-817c-7b7251c3f61f",
+      "name": "Custom Reward Effectiveness Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -640,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Workflow Efficiency Analysis\n-- Analyzes workflow performance metrics and provides efficiency recommendations\n\nWITH workflow_metrics AS (\n  SELECT \n    workflow_name,\n    execution_count,\n    avg_execution_time_seconds,\n    success_rate,\n    error_count,\n    last_execution_date,\n    efficiency_score,\n    resource_usage_score,\n    user_satisfaction_score\n  FROM workflow_analytics\n  WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'\n)\n\nSELECT \n  'workflow_efficiency_recommendations' as analysis_type,\n  CURRENT_TIMESTAMP as analysis_timestamp,\n  \n  json_build_object(\n    'total_workflows', (SELECT COUNT(*) FROM workflow_metrics),\n    'avg_execution_time', (SELECT ROUND(AVG(avg_execution_time_seconds), 2) FROM workflow_metrics),\n    'avg_success_rate', (SELECT ROUND(AVG(success_rate), 2) FROM workflow_metrics),\n    'avg_efficiency_score', (SELECT ROUND(AVG(efficiency_score), 2) FROM workflow_metrics)\n  ) as summary_stats,\n  \n  (\n    SELECT json_agg(\n      json_build_object(\n        'workflow_name', workflow_name,\n        'execution_count', execution_count,\n        'avg_execution_time', avg_execution_time_seconds,\n        'success_rate', success_rate,\n        'efficiency_score', efficiency_score,\n        'recommendation', \n        CASE \n          WHEN efficiency_score < 60 THEN 'Optimize workflow steps and reduce bottlenecks'\n          WHEN success_rate < 90 THEN 'Improve error handling and validation'\n          WHEN avg_execution_time_seconds > 300 THEN 'Consider parallel processing or caching'\n          ELSE 'Workflow performing well - monitor for changes'\n        END\n      )\n    )\n    FROM workflow_metrics\n    ORDER BY efficiency_score ASC\n  ) as workflow_analysis\n\nORDER BY analysis_timestamp DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "2434083a-c484-4777-9b3e-f51df9cfb121",
+      "name": "Workflow Efficiency Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -640,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- SBS Integration Health Analysis\n-- Monitors health and performance of SBS system integrations\n\nWITH integration_health AS (\n  SELECT \n    integration_name,\n    integration_type,\n    health_status,\n    response_time_ms,\n    error_count,\n    success_count,\n    last_check_time,\n    uptime_percentage,\n    data_consistency_score\n  FROM integration_health_logs\n  WHERE check_timestamp >= CURRENT_DATE - INTERVAL '24 hours'\n)\n\nSELECT \n  'integration_health_checks' as analysis_type,\n  CURRENT_TIMESTAMP as analysis_timestamp,\n  \n  json_build_object(\n    'total_integrations', (SELECT COUNT(DISTINCT integration_name) FROM integration_health),\n    'healthy_integrations', (SELECT COUNT(DISTINCT integration_name) FROM integration_health WHERE health_status = 'healthy'),\n    'avg_response_time', (SELECT ROUND(AVG(response_time_ms), 2) FROM integration_health),\n    'overall_uptime', (SELECT ROUND(AVG(uptime_percentage), 2) FROM integration_health)\n  ) as summary_stats,\n  \n  (\n    SELECT json_agg(\n      json_build_object(\n        'integration_name', integration_name,\n        'integration_type', integration_type,\n        'health_status', health_status,\n        'response_time_ms', response_time_ms,\n        'uptime_percentage', uptime_percentage,\n        'data_consistency_score', data_consistency_score,\n        'recommendation',\n        CASE \n          WHEN health_status = 'critical' THEN 'Immediate attention required - system may be down'\n          WHEN health_status = 'warning' THEN 'Monitor closely - performance degradation detected'\n          WHEN response_time_ms > 5000 THEN 'Optimize integration performance - slow response times'\n          WHEN uptime_percentage < 95 THEN 'Improve integration reliability'\n          ELSE 'Integration healthy - continue monitoring'\n        END\n      )\n    )\n    FROM (\n      SELECT DISTINCT ON (integration_name) \n        integration_name,\n        integration_type,\n        health_status,\n        response_time_ms,\n        uptime_percentage,\n        data_consistency_score\n      FROM integration_health\n      ORDER BY integration_name, last_check_time DESC\n    ) latest_health\n    ORDER BY \n      CASE health_status \n        WHEN 'critical' THEN 1\n        WHEN 'warning' THEN 2\n        WHEN 'healthy' THEN 3\n      END\n  ) as integration_details\n\nORDER BY analysis_timestamp DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "d57899d8-1850-448f-b06f-3d2bc02ef996",
+      "name": "SBS Integration Health Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -640,
+        1088
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all analysis results into comprehensive SBS optimization report\nconst results = [];\n\n// Collect all results from PostgreSQL nodes\nfor (const item of $input.all()) {\n  if (item.json && item.json.analysis_type) {\n    results.push(item.json);\n  }\n}\n\n// Create comprehensive response\nconst response = {\n  success: true,\n  timestamp: new Date().toISOString(),\n  total_analyses: results.length,\n  sbs_optimization_report: {\n    lifecycle_optimization: results.find(r => r.analysis_type === 'lifecycle_optimization_analysis') || null,\n    routine_pattern_analysis: results.find(r => r.analysis_type === 'routine_pattern_analysis') || null,\n    category_performance_insights: results.find(r => r.analysis_type === 'category_performance_insights') || null,\n    reward_effectiveness_analysis: results.find(r => r.analysis_type === 'reward_effectiveness_analysis') || null,\n    workflow_efficiency_recommendations: results.find(r => r.analysis_type === 'workflow_efficiency_recommendations') || null,\n    integration_health_checks: results.find(r => r.analysis_type === 'integration_health_checks') || null\n  },\n  summary: {\n    total_systems: results.find(r => r.analysis_type === 'lifecycle_optimization_analysis')?.summary_stats?.total_systems_analyzed || 0,\n    total_routines: results.find(r => r.analysis_type === 'routine_pattern_analysis')?.summary_stats?.total_routines_analyzed || 0,\n    total_categories: results.find(r => r.analysis_type === 'category_performance_insights')?.summary_stats?.total_categories || 0,\n    total_rewards: results.find(r => r.analysis_type === 'reward_effectiveness_analysis')?.system_summary?.total_rewards || 0,\n    total_workflows: results.find(r => r.analysis_type === 'workflow_efficiency_recommendations')?.summary_stats?.total_workflows || 0,\n    total_integrations: results.find(r => r.analysis_type === 'integration_health_checks')?.summary_stats?.total_integrations || 0\n  }\n};\n\nreturn [{ json: response }];"
+      },
+      "id": "35b12b01-8cbb-4ca8-a074-e87f78b595a2",
+      "name": "Merge All Analysis Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{{ $json }}",
+        "options": {}
+      },
+      "id": "cd1e31a3-f409-46ef-9e68-38350566c02d",
+      "name": "Return Complete SBS Analysis",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -192,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Routine Completion Pattern Analysis and Optimization\n-- Analyzes routine completion patterns, identifies trends, and provides optimization recommendations\n\nWITH routine_completion_stats AS (\n  -- Calculate completion metrics for each routine\n  SELECT \n    r.id as routine_id,\n    r.name as routine_name,\n    r.frequency as routine_frequency,\n    r.estimated_duration_minutes,\n    r.difficulty_level,\n    r.category,\n    s.id as sbs_system_id,\n    s.name as sbs_system_name,\n    s.category as system_category,\n    \n    -- Completion statistics\n    COUNT(rc.id) as total_completions,\n    COUNT(CASE WHEN rc.completed_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as completions_7_days,\n    COUNT(CASE WHEN rc.completed_at >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as completions_30_days,\n    COUNT(CASE WHEN rc.completed_at >= CURRENT_DATE - INTERVAL '90 days' THEN 1 END) as completions_90_days,\n    \n    -- Completion rate analysis\n    ROUND(\n      COUNT(rc.id)::numeric / GREATEST(\n        EXTRACT(EPOCH FROM (CURRENT_DATE - r.created_at)) / 86400.0 / \n        CASE \n          WHEN r.frequency = 'daily' THEN 1\n          WHEN r.frequency = 'weekly' THEN 7\n          WHEN r.frequency = 'monthly' THEN 30\n          ELSE 1\n        END,\n        1\n      ) * 100,\n      2\n    ) as completion_rate_percentage,\n    \n    -- Time pattern analysis\n    AVG(rc.actual_duration_minutes) as avg_actual_duration,\n    STDDEV(rc.actual_duration_minutes) as duration_variability,\n    \n    -- Satisfaction tracking\n    AVG(rc.satisfaction_rating) as avg_satisfaction,\n    AVG(rc.energy_level_before) as avg_energy_before,\n    AVG(rc.energy_level_after) as avg_energy_after,\n    \n    -- Last completion info\n    MAX(rc.completed_at) as last_completion_date,\n    MIN(rc.completed_at) as first_completion_date\n    \n  FROM routines r\n  LEFT JOIN routine_completions rc ON r.id = rc.routine_id\n  LEFT JOIN sbs_systems s ON r.sbs_system_id = s.id\n  WHERE r.is_active = true\n  GROUP BY r.id, r.name, r.frequency, r.estimated_duration_minutes, \n           r.difficulty_level, r.category, s.id, s.name, s.category\n)\n\n-- Final comprehensive routine pattern analysis output\nSELECT \n  'routine_pattern_analysis' as analysis_type,\n  CURRENT_TIMESTAMP as analysis_timestamp,\n  \n  -- Summary statistics\n  json_build_object(\n    'total_routines_analyzed', (SELECT COUNT(*) FROM routine_completion_stats),\n    'avg_completion_rate', (SELECT ROUND(AVG(completion_rate_percentage), 2) FROM routine_completion_stats),\n    'avg_satisfaction_score', (SELECT ROUND(AVG(avg_satisfaction), 2) FROM routine_completion_stats),\n    'routines_needing_optimization', (\n      SELECT COUNT(*) FROM routine_completion_stats \n      WHERE completion_rate_percentage < 50 OR avg_satisfaction < 3.0\n    )\n  ) as summary_stats,\n  \n  -- Pattern analysis by characteristics\n  (\n    SELECT json_agg(\n      json_build_object(\n        'frequency', routine_frequency,\n        'difficulty_level', difficulty_level,\n        'category', category,\n        'system_category', system_category,\n        'avg_completion_rate', ROUND(AVG(completion_rate_percentage), 2),\n        'avg_satisfaction_score', ROUND(AVG(avg_satisfaction), 2),\n        'avg_duration_minutes', ROUND(AVG(avg_actual_duration), 1)\n      )\n    )\n    FROM routine_completion_stats\n    GROUP BY routine_frequency, difficulty_level, category, system_category\n  ) as pattern_analysis\n\nORDER BY analysis_timestamp DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "d67ce4b6-a1f3-4fc9-b77d-ec60820224db",
+      "name": "Routine Pattern Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -640,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- SBS System Lifecycle Optimization Analysis\n-- Analyzes stage progression patterns and identifies optimization opportunities\n\nWITH system_lifecycle_stats AS (\n  -- Calculate stage progression metrics for each SBS system\n  SELECT \n    s.id as system_id,\n    s.name as system_name,\n    s.category as system_category,\n    s.stage_progression_type,\n    s.current_stage,\n    s.total_stages,\n    s.created_at,\n    s.updated_at,\n    \n    -- Calculate stage progression rate (stages per day)\n    CASE \n      WHEN s.current_stage > 1 AND s.updated_at > s.created_at THEN\n        (s.current_stage - 1.0) / GREATEST(\n          EXTRACT(EPOCH FROM (s.updated_at - s.created_at)) / 86400.0, \n          0.1\n        )\n      ELSE 0\n    END as stages_per_day,\n    \n    -- Calculate completion percentage\n    ROUND(\n      (s.current_stage::numeric / NULLIF(s.total_stages, 0)) * 100, \n      2\n    ) as completion_percentage,\n    \n    -- Estimate days to completion at current rate\n    CASE \n      WHEN s.current_stage > 1 AND s.current_stage < s.total_stages AND s.updated_at > s.created_at THEN\n        ROUND(\n          (s.total_stages - s.current_stage) / GREATEST(\n            (s.current_stage - 1.0) / GREATEST(\n              EXTRACT(EPOCH FROM (s.updated_at - s.created_at)) / 86400.0, \n              0.1\n            ),\n            0.01\n          ),\n          1\n        )\n      ELSE NULL\n    END as estimated_days_to_completion,\n    \n    -- Get associated routine count\n    (SELECT COUNT(*) FROM routines r WHERE r.sbs_system_id = s.id) as routine_count,\n    \n    -- Get last activity date\n    COALESCE(\n      (SELECT MAX(completed_at) FROM routine_completions rc \n       JOIN routines r ON r.id = rc.routine_id \n       WHERE r.sbs_system_id = s.id),\n      s.updated_at\n    ) as last_activity_date\n    \n  FROM sbs_systems s\n  WHERE s.is_active = true\n),\n\nstage_progression_patterns AS (\n  -- Analyze patterns in stage progression across different system categories\n  SELECT \n    system_category,\n    stage_progression_type,\n    COUNT(*) as system_count,\n    ROUND(AVG(stages_per_day), 4) as avg_stages_per_day,\n    ROUND(AVG(completion_percentage), 2) as avg_completion_percentage,\n    ROUND(AVG(estimated_days_to_completion), 1) as avg_estimated_completion_days,\n    \n    -- Identify fast and slow progressors\n    ROUND(\n      PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY stages_per_day), \n      4\n    ) as progression_q1,\n    ROUND(\n      PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY stages_per_day), \n      4\n    ) as progression_q3,\n    \n    -- Calculate activity patterns\n    COUNT(CASE WHEN last_activity_date >= CURRENT_DATE - INTERVAL '7 days' \n               THEN 1 END) as active_last_7_days,\n    COUNT(CASE WHEN last_activity_date >= CURRENT_DATE - INTERVAL '30 days' \n               THEN 1 END) as active_last_30_days\n    \n  FROM system_lifecycle_stats\n  GROUP BY system_category, stage_progression_type\n),\n\noptimization_opportunities AS (\n  -- Identify specific optimization opportunities\n  SELECT \n    sls.*,\n    CASE \n      WHEN sls.stages_per_day < pp.progression_q1 AND sls.last_activity_date < CURRENT_DATE - INTERVAL '14 days'\n        THEN 'stalled_system'\n      WHEN sls.stages_per_day > pp.progression_q3 AND sls.routine_count < 3\n        THEN 'needs_more_routines'\n      WHEN sls.completion_percentage > 80 AND sls.stages_per_day < pp.avg_stages_per_day * 0.5\n        THEN 'slow_final_stages'\n      WHEN sls.completion_percentage < 20 AND sls.last_activity_date < CURRENT_DATE - INTERVAL '7 days'\n        THEN 'early_abandonment_risk'\n      WHEN sls.routine_count > 10 AND sls.stages_per_day < pp.avg_stages_per_day * 0.3\n        THEN 'routine_overload'\n      ELSE 'performing_well'\n    END as optimization_category,\n    \n    -- Generate specific recommendations\n    CASE \n      WHEN sls.stages_per_day < pp.progression_q1 AND sls.last_activity_date < CURRENT_DATE - INTERVAL '14 days'\n        THEN 'Re-engage with system: Consider reducing complexity or adding motivational triggers'\n      WHEN sls.stages_per_day > pp.progression_q3 AND sls.routine_count < 3\n        THEN 'Add supporting routines: System is progressing well but needs more routine support'\n      WHEN sls.completion_percentage > 80 AND sls.stages_per_day < pp.avg_stages_per_day * 0.5\n        THEN 'Focus on completion: System is near finish line but slowing down'\n      WHEN sls.completion_percentage < 20 AND sls.last_activity_date < CURRENT_DATE - INTERVAL '7 days'\n        THEN 'Early intervention needed: High abandonment risk detected'\n      WHEN sls.routine_count > 10 AND sls.stages_per_day < pp.avg_stages_per_day * 0.3\n        THEN 'Simplify routine structure: Too many routines may be causing overwhelm'\n      ELSE 'Continue current approach: System is performing within expected parameters'\n    END as recommendation\n    \n  FROM system_lifecycle_stats sls\n  JOIN stage_progression_patterns pp ON \n    pp.system_category = sls.system_category AND \n    pp.stage_progression_type = sls.stage_progression_type\n)\n\n-- Final output with comprehensive lifecycle optimization analysis\nSELECT \n  'lifecycle_optimization_analysis' as analysis_type,\n  CURRENT_TIMESTAMP as analysis_timestamp,\n  \n  -- Summary statistics\n  json_build_object(\n    'total_systems_analyzed', (SELECT COUNT(*) FROM system_lifecycle_stats),\n    'avg_completion_percentage', (SELECT ROUND(AVG(completion_percentage), 2) FROM system_lifecycle_stats),\n    'avg_stages_per_day', (SELECT ROUND(AVG(stages_per_day), 4) FROM system_lifecycle_stats),\n    'systems_needing_attention', (\n      SELECT COUNT(*) FROM optimization_opportunities \n      WHERE optimization_category != 'performing_well'\n    )\n  ) as summary_stats,\n  \n  -- Category performance breakdown\n  (\n    SELECT json_agg(\n      json_build_object(\n        'category', system_category,\n        'progression_type', stage_progression_type,\n        'system_count', system_count,\n        'avg_stages_per_day', avg_stages_per_day,\n        'avg_completion_percentage', avg_completion_percentage,\n        'avg_estimated_completion_days', avg_estimated_completion_days,\n        'active_systems_7_days', active_last_7_days,\n        'active_systems_30_days', active_last_30_days,\n        'progression_quartiles', json_build_object(\n          'q1', progression_q1,\n          'q3', progression_q3\n        )\n      )\n    )\n    FROM stage_progression_patterns\n  ) as category_performance,\n  \n  -- Optimization opportunities by category\n  (\n    SELECT json_agg(\n      json_build_object(\n        'optimization_category', optimization_category,\n        'system_count', COUNT(*),\n        'systems', json_agg(\n          json_build_object(\n            'system_id', system_id,\n            'system_name', system_name,\n            'category', system_category,\n            'current_stage', current_stage,\n            'total_stages', total_stages,\n            'completion_percentage', completion_percentage,\n            'stages_per_day', stages_per_day,\n            'routine_count', routine_count,\n            'last_activity_date', last_activity_date,\n            'recommendation', recommendation\n          )\n        )\n      )\n    )\n    FROM optimization_opportunities\n    GROUP BY optimization_category\n  ) as optimization_opportunities,\n  \n  -- Top recommendations for immediate action\n  (\n    SELECT json_agg(\n      json_build_object(\n        'priority', \n        CASE \n          WHEN optimization_category = 'early_abandonment_risk' THEN 'high'\n          WHEN optimization_category = 'stalled_system' THEN 'high'\n          WHEN optimization_category = 'slow_final_stages' THEN 'medium'\n          WHEN optimization_category = 'routine_overload' THEN 'medium'\n          ELSE 'low'\n        END,\n        'system_id', system_id,\n        'system_name', system_name,\n        'issue', optimization_category,\n        'recommendation', recommendation,\n        'urgency_score', \n        CASE \n          WHEN optimization_category = 'early_abandonment_risk' THEN 95\n          WHEN optimization_category = 'stalled_system' THEN 85\n          WHEN optimization_category = 'slow_final_stages' THEN 70\n          WHEN optimization_category = 'routine_overload' THEN 65\n          ELSE 30\n        END\n      )\n    )\n    FROM optimization_opportunities\n    WHERE optimization_category != 'performing_well'\n    ORDER BY \n      CASE \n        WHEN optimization_category = 'early_abandonment_risk' THEN 1\n        WHEN optimization_category = 'stalled_system' THEN 2\n        WHEN optimization_category = 'slow_final_stages' THEN 3\n        WHEN optimization_category = 'routine_overload' THEN 4\n        ELSE 5\n      END,\n      stages_per_day ASC\n    LIMIT 20\n  ) as priority_recommendations\n\nORDER BY analysis_timestamp DESC\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "d87f657d-0737-4881-8c84-2c6f636fa93d",
+      "name": "SBS Lifecycle Optimization Analysis",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -640,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sbs-data-optimizer",
+        "options": {}
+      },
+      "id": "70ad8403-293a-44a0-a62b-4d6814de6a53",
+      "name": "Webhook - SBS Data Optimizer",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -864,
+        608
+      ],
+      "webhookId": "sbs-data-optimizer"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "System Category Performance Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge All Analysis Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Custom Reward Effectiveness Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge All Analysis Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Efficiency Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge All Analysis Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SBS Integration Health Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge All Analysis Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge All Analysis Results": {
+      "main": [
+        [
+          {
+            "node": "Return Complete SBS Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Routine Pattern Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge All Analysis Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SBS Lifecycle Optimization Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge All Analysis Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - SBS Data Optimizer": {
+      "main": [
+        [
+          {
+            "node": "SBS Lifecycle Optimization Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Routine Pattern Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "System Category Performance Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Custom Reward Effectiveness Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Workflow Efficiency Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SBS Integration Health Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "305828a9a89b8403161b60e40defb81a6f36383f4da0e998f8e4336ac67237c9"
+  },
+  "id": "P0QGiQfVQhu5oCyx",
+  "tags": [],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

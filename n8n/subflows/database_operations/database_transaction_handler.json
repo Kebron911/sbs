@@ -1,0 +1,269 @@
+{
+  "name": "Database Transaction Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-database-transaction",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_database_transaction",
+      "name": "Webhook - Database Transaction",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-database-transaction"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Database Transaction Builder\nconst requestData = $json;\nconst operation = requestData.operation || 'SELECT';\nconst table = requestData.table;\nconst parameters = requestData.parameters || [];\nconst fields = requestData.fields || {};\nconst conditions = requestData.conditions || {};\nconst customQuery = requestData.custom_query || null;\nconst returnColumns = requestData.return_columns || '*';\nconst returnFirstOnly = requestData.return_first_only || false;\n\n// Validate required fields\nif (!customQuery && !table) {\n  return {\n    json: {\n      success: false,\n      error: 'Either table name or custom_query is required',\n      statusCode: 400\n    }\n  };\n}\n\nlet query = '';\nlet queryParameters = [];\nlet paramIndex = 1;\n\nif (customQuery) {\n  query = customQuery;\n  queryParameters = parameters;\n} else {\n  switch (operation.toUpperCase()) {\n    case 'SELECT':\n      query = `SELECT ${returnColumns} FROM ${table}`;\n      if (Object.keys(conditions).length > 0) {\n        const whereClause = [];\n        Object.entries(conditions).forEach(([field, value]) => {\n          whereClause.push(`${field} = $${paramIndex}`);\n          queryParameters.push(value);\n          paramIndex++;\n        });\n        query += ` WHERE ${whereClause.join(' AND ')}`;\n      }\n      if (requestData.order_by) {\n        query += ` ORDER BY ${requestData.order_by}`;\n      }\n      if (requestData.limit) {\n        query += ` LIMIT ${requestData.limit}`;\n      }\n      break;\n      \n    case 'INSERT':\n      if (Object.keys(fields).length === 0) {\n        return {\n          json: {\n            success: false,\n            error: 'Fields are required for INSERT operation',\n            statusCode: 400\n          }\n        };\n      }\n      const insertFields = Object.keys(fields);\n      const insertPlaceholders = insertFields.map(() => `$${paramIndex++}`).join(', ');\n      queryParameters = Object.values(fields);\n      query = `INSERT INTO ${table} (${insertFields.join(', ')}) VALUES (${insertPlaceholders}) RETURNING ${returnColumns}`;\n      break;\n      \n    case 'UPDATE':\n      if (Object.keys(fields).length === 0) {\n        return {\n          json: {\n            success: false,\n            error: 'Fields are required for UPDATE operation',\n            statusCode: 400\n          }\n        };\n      }\n      const updateClauses = [];\n      Object.entries(fields).forEach(([field, value]) => {\n        if (field === 'updated_at' && value === 'NOW()') {\n          updateClauses.push(`${field} = NOW()`);\n        } else {\n          updateClauses.push(`${field} = $${paramIndex}`);\n          queryParameters.push(value);\n          paramIndex++;\n        }\n      });\n      query = `UPDATE ${table} SET ${updateClauses.join(', ')}`;\n      if (Object.keys(conditions).length > 0) {\n        const whereClause = [];\n        Object.entries(conditions).forEach(([field, value]) => {\n          whereClause.push(`${field} = $${paramIndex}`);\n          queryParameters.push(value);\n          paramIndex++;\n        });\n        query += ` WHERE ${whereClause.join(' AND ')}`;\n      }\n      query += ` RETURNING ${returnColumns}`;\n      break;\n      \n    case 'DELETE':\n      query = `DELETE FROM ${table}`;\n      if (Object.keys(conditions).length > 0) {\n        const whereClause = [];\n        Object.entries(conditions).forEach(([field, value]) => {\n          whereClause.push(`${field} = $${paramIndex}`);\n          queryParameters.push(value);\n          paramIndex++;\n        });\n        query += ` WHERE ${whereClause.join(' AND ')}`;\n      }\n      if (requestData.return_deleted_data) {\n        query += ` RETURNING ${returnColumns}`;\n      }\n      break;\n  }\n}\n\nreturn {\n  json: {\n    query: query,\n    parameters: queryParameters,\n    return_first_only: returnFirstOnly,\n    operation: operation.toUpperCase(),\n    table: table\n  }\n};"
+      },
+      "id": "build_transaction",
+      "name": "Build Database Transaction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "additionalFields": {
+          "queryParameters": "={{ $json.parameters }}"
+        }
+      },
+      "id": "execute_transaction",
+      "name": "Execute Database Transaction",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $('Build Database Transaction').item.json.return_first_only }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check_return_single",
+      "name": "Check Return Single Item",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format single item response\nconst transactionResult = $('Execute Database Transaction').all();\n\nif (transactionResult.length === 0) {\n  return {\n    json: {\n      success: false,\n      error: 'No data found',\n      statusCode: 404\n    }\n  };\n}\n\nconst data = transactionResult[0].json;\n\nreturn {\n  json: {\n    success: true,\n    data: data,\n    statusCode: 200\n  }\n};"
+      },
+      "id": "format_single_response",
+      "name": "Format Single Item Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format multiple items response\nconst transactionResult = $('Execute Database Transaction').all();\n\nconst data = transactionResult.map(item => item.json);\n\nreturn {\n  json: {\n    success: true,\n    data: data,\n    count: data.length,\n    statusCode: 200\n  }\n};"
+      },
+      "id": "format_multiple_response",
+      "name": "Format Multiple Items Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "single_response",
+      "name": "Single Item Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "multiple_response",
+      "name": "Multiple Items Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle database transaction errors\nconst error = $json;\n\nlet errorMessage = 'Database transaction failed';\nlet statusCode = 500;\n\nif (error.message) {\n  if (error.message.includes('duplicate key')) {\n    errorMessage = 'Record already exists';\n    statusCode = 409;\n  } else if (error.message.includes('not found')) {\n    errorMessage = 'Record not found';\n    statusCode = 404;\n  } else if (error.message.includes('foreign key')) {\n    errorMessage = 'Referenced record does not exist';\n    statusCode = 400;\n  }\n}\n\nreturn {\n  json: {\n    success: false,\n    error: errorMessage,\n    error_details: error.message || 'Unknown database error',\n    statusCode: statusCode\n  }\n};"
+      },
+      "id": "handle_error",
+      "name": "Handle Database Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "error_response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "webhook_database_transaction": {
+      "main": [
+        [
+          {
+            "node": "build_transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build_transaction": {
+      "main": [
+        [
+          {
+            "node": "execute_transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "execute_transaction": {
+      "main": [
+        [
+          {
+            "node": "check_return_single",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "handle_error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_return_single": {
+      "main": [
+        [
+          {
+            "node": "format_single_response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "format_multiple_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format_single_response": {
+      "main": [
+        [
+          {
+            "node": "single_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format_multiple_response": {
+      "main": [
+        [
+          {
+            "node": "multiple_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_error": {
+      "main": [
+        [
+          {
+            "node": "error_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {},
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-28T20:00:00.000Z",
+  "versionId": "1",
+  "active": true,
+  "meta": {},
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

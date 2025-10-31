@@ -1,0 +1,429 @@
+{
+  "name": "CRON_MANAGER",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule_daily",
+      "name": "Schedule - Daily Midnight",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.id, c.user_id, c.hp, c.coins, c.level, u.username, u.email, s.overdraft_rule FROM characters c JOIN users u ON c.user_id = u.id LEFT JOIN settings s ON s.user_id = u.id WHERE c.last_login > NOW() - INTERVAL '30 days'",
+        "options": {}
+      },
+      "id": "fetch_active_characters",
+      "name": "Fetch Active Characters",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"system\",\n  \"actor_id\": 0,\n  \"target_type\": \"cron\",\n  \"target_id\": 0,\n  \"action\": \"daily_maintenance\",\n  \"detail\": {\n    \"processedCharacters\": $('Calculate Daily Penalties').all().length,\n    \"eventsGenerated\": $('Generate Daily Events').all().length,\n    \"streaksBroken\": $('Reset Broken Streaks').all().length,\n    \"timestamp\": new Date().toISOString()\n  },\n  \"outcome\": \"success\",\n  \"severity\": \"info\",\n  \"source\": \"cron_manager_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_system",
+      "name": "Log System Run (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT h.character_id, COUNT(*) as overdue_habits FROM habits h WHERE h.type = 'good' AND h.last_completed < CURRENT_DATE - INTERVAL '2 days' GROUP BY h.character_id",
+        "options": {}
+      },
+      "id": "check_overdue_habits",
+      "name": "Check Overdue Habits",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 450],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.character_id, COUNT(*) as overdue_tasks FROM (SELECT c.id as character_id FROM characters c JOIN projects p ON p.character_id = c.id JOIN tasks t ON t.project_id = p.id WHERE t.completed = false AND t.deadline < CURRENT_DATE GROUP BY c.id) as t GROUP BY t.character_id",
+        "options": {}
+      },
+      "id": "check_overdue_tasks",
+      "name": "Check Overdue Tasks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate daily HP penalties based on character activity\nconst characters = $('Fetch Active Characters').all().map(item => item.json);\nconst overdueHabits = $('Check Overdue Habits').all().map(item => item.json);\nconst overdueTasks = $('Check Overdue Tasks').all().map(item => item.json);\n\nconst penalties = characters.map(char => {\n  // Find overdue data for this character\n  const habitData = overdueHabits.find(h => h.character_id === char.id) || { overdue_habits: 0 };\n  const taskData = overdueTasks.find(t => t.character_id === char.id) || { overdue_tasks: 0 };\n  \n  // Calculate penalties\n  let hpPenalty = 0;\n  let reason = [];\n  \n  // Penalty for overdue habits (2 HP per overdue habit, max 20)\n  if (habitData.overdue_habits > 0) {\n    const habitPenalty = Math.min(habitData.overdue_habits * 2, 20);\n    hpPenalty += habitPenalty;\n    reason.push(`${habitData.overdue_habits} overdue habits (-${habitPenalty} HP)`);\n  }\n  \n  // Penalty for overdue tasks (5 HP per overdue task, max 25)\n  if (taskData.overdue_tasks > 0) {\n    const taskPenalty = Math.min(taskData.overdue_tasks * 5, 25);\n    hpPenalty += taskPenalty;\n    reason.push(`${taskData.overdue_tasks} overdue tasks (-${taskPenalty} HP)`);\n  }\n  \n  // Penalty for negative coins (overdraft penalty)\n  if (char.coins < 0) {\n    const overdraftPenalty = Math.min(Math.abs(char.coins) * 0.1, 15);\n    hpPenalty += Math.floor(overdraftPenalty);\n    reason.push(`Overdraft penalty (-${Math.floor(overdraftPenalty)} HP)`);\n  }\n  \n  // Daily maintenance bonus for active players (level 10+)\n  let hpBonus = 0;\n  if (char.level >= 10 && hpPenalty === 0) {\n    hpBonus = 5;\n    reason.push(`Daily wellness bonus (+${hpBonus} HP)`);\n  }\n  \n  return {\n    characterId: char.id,\n    userId: char.user_id,\n    username: char.username,\n    currentHp: char.hp,\n    hpPenalty: hpPenalty,\n    hpBonus: hpBonus,\n    netHpChange: hpBonus - hpPenalty,\n    newHp: Math.max(0, Math.min(100, char.hp + hpBonus - hpPenalty)),\n    reason: reason.join(', ') || 'No changes',\n    shouldUpdate: (hpPenalty > 0 || hpBonus > 0)\n  };\n});\n\nreturn penalties.filter(p => p.shouldUpdate).map(p => ({ json: p }));"
+      },
+      "id": "calculate_penalties",
+      "name": "Calculate Daily Penalties",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE characters SET hp = $1 WHERE id = $2 RETURNING id, hp",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.newHp }}"
+              },
+              {
+                "parameter": "={{ $json.characterId }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "update_character_hp",
+      "name": "Update Character HP",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO events (character_id, event_type, description, coins, hp, xp) VALUES ($1, 'daily_maintenance', $2, 0, $3, 0)",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.characterId }}"
+              },
+              {
+                "parameter": "={{ $json.reason }}"
+              },
+              {
+                "parameter": "={{ $json.netHpChange }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "log_event",
+      "name": "Log Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT et.id, et.name, et.description, et.coins, et.hp, et.xp FROM event_templates et WHERE et.frequency = 'daily' AND et.active = true ORDER BY RANDOM() LIMIT 10",
+        "options": {}
+      },
+      "id": "fetch_available_events",
+      "name": "Fetch Available Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 200],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate daily events for active characters\nconst characters = $('Fetch Active Characters').all().map(item => item.json);\nconst eventTemplates = $('Fetch Available Events').all().map(item => item.json);\n\nconst dailyEvents = [];\n\ncharacters.forEach(character => {\n  // Each character gets 1-3 daily events\n  const numEvents = Math.floor(Math.random() * 3) + 1;\n  \n  for (let i = 0; i < numEvents; i++) {\n    const template = eventTemplates[Math.floor(Math.random() * eventTemplates.length)];\n    \n    if (template) {\n      dailyEvents.push({\n        characterId: character.id,\n        templateId: template.id,\n        eventId: `daily_${character.id}_${template.id}_${Date.now()}_${i}`,\n        name: template.name,\n        description: template.description,\n        coins: template.coins,\n        hp: template.hp,\n        xp: template.xp\n      });\n    }\n  }\n});\n\nreturn dailyEvents.map(event => ({ json: event }));"
+      },
+      "id": "generate_daily_events",
+      "name": "Generate Daily Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO events (character_id, event_type, description, coins, hp, xp, event_id) VALUES ($1, 'daily_random', $2, $3, $4, $5, $6)",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.characterId }}"
+              },
+              {
+                "parameter": "={{ $json.description }}"
+              },
+              {
+                "parameter": "={{ $json.coins }}"
+              },
+              {
+                "parameter": "={{ $json.hp }}"
+              },
+              {
+                "parameter": "={{ $json.xp }}"
+              },
+              {
+                "parameter": "={{ $json.eventId }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "insert_daily_events",
+      "name": "Insert Daily Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 200],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE habits SET streak = 0 WHERE last_completed < CURRENT_DATE - INTERVAL '2 days' AND type = 'good' RETURNING id, character_id, name",
+        "options": {}
+      },
+      "id": "reset_broken_streaks",
+      "name": "Reset Broken Streaks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO events (character_id, event_type, description) VALUES ($1, 'streak_broken', $2)",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "parameter": "={{ $json.character_id }}"
+              },
+              {
+                "parameter": "=Streak broken for habit: {{ $json.name }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "log_streak_breaks",
+      "name": "Log Streak Breaks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 600],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule - Daily Midnight": {
+      "main": [
+        [
+          {
+            "node": "Fetch Active Characters",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Overdue Habits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Overdue Tasks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Available Events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reset Broken Streaks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active Characters": {
+      "main": [
+        [
+          {
+            "node": "Calculate Daily Penalties",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Overdue Habits": {
+      "main": [
+        [
+          {
+            "node": "Calculate Daily Penalties",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Overdue Tasks": {
+      "main": [
+        [
+          {
+            "node": "Calculate Daily Penalties",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Daily Penalties": {
+      "main": [
+        [
+          {
+            "node": "Update Character HP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Character HP": {
+      "main": [
+        [
+          {
+            "node": "Log Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event": {
+      "main": [
+        [
+          {
+            "node": "Log System Run (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Available Events": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Daily Events": {
+      "main": [
+        [
+          {
+            "node": "Insert Daily Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Broken Streaks": {
+      "main": [
+        [
+          {
+            "node": "Log Streak Breaks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": true,
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.000Z",
+  "createdAt": "2025-10-30T15:57:49.000Z"
+}

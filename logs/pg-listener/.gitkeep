@@ -1,0 +1,2 @@
+# This file ensures the pg-listener logs directory is preserved in git
+# The actual log files are excluded by .gitignore

@@ -1,0 +1,560 @@
+{
+  "name": "SUBFLOW: Character Level Progression",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-character-progression",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_progression",
+      "name": "Webhook - Character Progression",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-character-progression"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "character_id",
+              "name": "characterId",
+              "value": "={{ $json.body.character_id }}",
+              "type": "number"
+            },
+            {
+              "id": "xp_gained",
+              "name": "xpGained",
+              "value": "={{ $json.body.xp_gained || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "skill_name",
+              "name": "skillName",
+              "value": "={{ $json.body.skill_name }}",
+              "type": "string"
+            },
+            {
+              "id": "skill_xp",
+              "name": "skillXp",
+              "value": "={{ $json.body.skill_xp || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "trigger_achievements",
+              "name": "triggerAchievements",
+              "value": "={{ $json.body.trigger_achievements !== false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "source",
+              "name": "source",
+              "value": "={{ $json.body.source || 'unknown' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_progression_data",
+      "name": "Prepare Progression Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, user_id, class, level, xp, total_xp, xp_multiplier, prestige_level\nFROM characters \nWHERE id = {{ $json.characterId }};",
+        "additionalFields": {
+          "mode": "single"
+        }
+      },
+      "id": "get_current_character",
+      "name": "Get Current Character",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "character_exists",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check_character_found",
+      "name": "Check Character Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate character level progression\nconst character = $('Get Current Character').item.json;\nconst progressionData = $('Prepare Progression Data').item.json;\n\n// Current character stats\nconst currentLevel = character.level;\nconst currentXp = character.xp;\nconst totalXp = character.total_xp;\nconst xpMultiplier = character.xp_multiplier || 1.0;\nconst prestigeLevel = character.prestige_level || 0;\n\n// Apply multipliers to gained XP\nconst rawXpGained = progressionData.xpGained;\nconst adjustedXpGained = Math.floor(rawXpGained * xpMultiplier * (1 + (prestigeLevel * 0.05)));\n\n// Calculate new XP values\nconst newCurrentXp = currentXp + adjustedXpGained;\nconst newTotalXp = totalXp + adjustedXpGained;\n\n// Level calculation function (exponential growth)\nfunction calculateLevel(totalXp) {\n  // Each level requires: 100 + (level * 50) XP\n  // So level 1->2 needs 150 XP, 2->3 needs 200 XP, etc.\n  let requiredXp = 0;\n  let level = 1;\n  \n  while (requiredXp <= totalXp) {\n    const nextLevelCost = 100 + (level * 50);\n    if (requiredXp + nextLevelCost > totalXp) break;\n    requiredXp += nextLevelCost;\n    level++;\n  }\n  \n  return {\n    level: level,\n    currentLevelXp: totalXp - requiredXp,\n    nextLevelRequirement: 100 + (level * 50),\n    totalXpForCurrentLevel: requiredXp\n  };\n}\n\n// Calculate new level\nconst newLevelData = calculateLevel(newTotalXp);\nconst newLevel = newLevelData.level;\nconst levelsGained = newLevel - currentLevel;\n\n// Calculate XP needed for next level\nconst xpForNextLevel = newLevelData.nextLevelRequirement - newLevelData.currentLevelXp;\n\n// Determine rewards for leveling up\nconst rewards = {\n  coins: levelsGained * 50,\n  hp_increase: levelsGained * 10,\n  skill_points: levelsGained * 2\n};\n\n// Build progression result\nconst progression = {\n  character_id: character.id,\n  user_id: character.user_id,\n  before: {\n    level: currentLevel,\n    xp: currentXp,\n    total_xp: totalXp\n  },\n  after: {\n    level: newLevel,\n    xp: newLevelData.currentLevelXp,\n    total_xp: newTotalXp\n  },\n  changes: {\n    xp_gained: adjustedXpGained,\n    raw_xp_gained: rawXpGained,\n    levels_gained: levelsGained,\n    xp_multiplier_applied: xpMultiplier,\n    prestige_bonus: prestigeLevel * 0.05\n  },\n  next_level: {\n    xp_needed: xpForNextLevel,\n    total_xp_needed: newTotalXp + xpForNextLevel,\n    progress_percentage: Math.round((newLevelData.currentLevelXp / newLevelData.nextLevelRequirement) * 100)\n  },\n  rewards: rewards,\n  level_up_occurred: levelsGained > 0,\n  source: progressionData.source\n};\n\nreturn {\n  json: progression\n};"
+      },
+      "id": "calculate_progression",
+      "name": "Calculate Progression",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has_skill_progression",
+              "leftValue": "={{ $('Prepare Progression Data').item.json.skillName }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check_skill_progression",
+      "name": "Check Skill Progression",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH skill_update AS (\n  UPDATE skills \n  SET \n    xp = xp + {{ $('Prepare Progression Data').item.json.skillXp }},\n    level = CASE \n      WHEN (xp + {{ $('Prepare Progression Data').item.json.skillXp }}) >= (level * 100) \n      THEN level + 1 \n      ELSE level \n    END,\n    updated_at = NOW()\n  WHERE character_id = {{ $('Get Current Character').item.json.id }}\n    AND name = '{{ $('Prepare Progression Data').item.json.skillName }}'\n  RETURNING id, name, xp, level, \n    (xp + {{ $('Prepare Progression Data').item.json.skillXp }}) as new_xp,\n    CASE \n      WHEN (xp + {{ $('Prepare Progression Data').item.json.skillXp }}) >= (level * 100) \n      THEN level + 1 \n      ELSE level \n    END as new_level\n)\nSELECT \n  id, name, \n  xp as old_xp, \n  level as old_level,\n  new_xp,\n  new_level,\n  (new_level - level) as levels_gained,\n  {{ $('Prepare Progression Data').item.json.skillXp }} as xp_gained\nFROM skill_update;",
+        "additionalFields": {
+          "mode": "single"
+        }
+      },
+      "id": "update_skill_progression",
+      "name": "Update Skill Progression",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1250,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE characters \nSET \n  level = {{ $json.after.level }},\n  xp = {{ $json.after.xp }},\n  total_xp = {{ $json.after.total_xp }},\n  coins = coins + {{ $json.rewards.coins }},\n  max_hp = max_hp + {{ $json.rewards.hp_increase }},\n  hp = LEAST(hp + {{ $json.rewards.hp_increase }}, max_hp + {{ $json.rewards.hp_increase }}),\n  updated_at = NOW()\nWHERE id = {{ $json.character_id }}\nRETURNING id, level, xp, total_xp, coins, hp, max_hp;",
+        "additionalFields": {
+          "mode": "single"
+        }
+      },
+      "id": "update_character_stats",
+      "name": "Update Character Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1250,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "level_up_occurred",
+              "leftValue": "={{ $('Calculate Progression').item.json.level_up_occurred }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check_level_up",
+      "name": "Check Level Up",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Calculate Progression').item.json.character_id,\n  \"event_type\": \"level_up\",\n  \"xp_change\": $('Calculate Progression').item.json.changes.xp_gained,\n  \"coins_change\": $('Calculate Progression').item.json.rewards.coins,\n  \"hp_change\": $('Calculate Progression').item.json.rewards.hp_increase,\n  \"description\": \"Level up! Reached level \" + $('Calculate Progression').item.json.after.level + \" (gained \" + $('Calculate Progression').item.json.changes.levels_gained + \" levels)\",\n  \"metadata\": {\n    \"old_level\": $('Calculate Progression').item.json.before.level,\n    \"new_level\": $('Calculate Progression').item.json.after.level,\n    \"levels_gained\": $('Calculate Progression').item.json.changes.levels_gained,\n    \"source\": $('Calculate Progression').item.json.source\n  }\n} }}",
+        "options": {}
+      },
+      "id": "log_level_up_event",
+      "name": "Log Level Up Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1650,
+        200
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should_trigger_achievements",
+              "leftValue": "={{ $('Prepare Progression Data').item.json.triggerAchievements }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check_trigger_achievements",
+      "name": "Check Trigger Achievements",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-trigger-achievement",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Calculate Progression').item.json.character_id,\n  \"event_type\": \"level_progression\",\n  \"event_data\": {\n    \"levels_gained\": $('Calculate Progression').item.json.changes.levels_gained,\n    \"new_level\": $('Calculate Progression').item.json.after.level,\n    \"total_xp\": $('Calculate Progression').item.json.after.total_xp,\n    \"source\": $('Calculate Progression').item.json.source\n  }\n} }}",
+        "options": {}
+      },
+      "id": "trigger_achievement_check",
+      "name": "Trigger Achievement Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1850,
+        200
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all progression results\nconst progression = $('Calculate Progression').item.json;\nconst characterUpdate = $('Update Character Stats').item.json;\nconst skillUpdate = $('Update Skill Progression').all().length > 0 ? $('Update Skill Progression').item.json : null;\n\n// Build comprehensive response\nconst response = {\n  success: true,\n  progression: progression,\n  character: characterUpdate,\n  skill_progression: skillUpdate,\n  level_up_occurred: progression.level_up_occurred,\n  notifications: []\n};\n\n// Add level up notification\nif (progression.level_up_occurred) {\n  response.notifications.push({\n    type: \"level_up\",\n    title: \"Level Up!\",\n    message: `Congratulations! You reached level ${progression.after.level}!`,\n    rewards: progression.rewards\n  });\n}\n\n// Add skill level up notification\nif (skillUpdate && skillUpdate.levels_gained > 0) {\n  response.notifications.push({\n    type: \"skill_level_up\",\n    title: \"Skill Level Up!\",\n    message: `Your ${skillUpdate.name} skill reached level ${skillUpdate.new_level}!`,\n    skill: {\n      name: skillUpdate.name,\n      old_level: skillUpdate.old_level,\n      new_level: skillUpdate.new_level,\n      xp_gained: skillUpdate.xp_gained\n    }\n  });\n}\n\nreturn {\n  json: response\n};"
+      },
+      "id": "combine_progression_results",
+      "name": "Combine Progression Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "send_progression_success",
+      "name": "Send Progression Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"Character not found\",\n  \"message\": \"No character found with the provided ID\"\n} }}",
+        "options": {
+          "responseCode": "404"
+        }
+      },
+      "id": "send_character_not_found_error",
+      "name": "Send Character Not Found Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Character Progression": {
+      "main": [
+        [
+          {
+            "node": "Prepare Progression Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Progression Data": {
+      "main": [
+        [
+          {
+            "node": "Get Current Character",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current Character": {
+      "main": [
+        [
+          {
+            "node": "Check Character Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Character Found": {
+      "main": [
+        [
+          {
+            "node": "Calculate Progression",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Skill Progression",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Character Not Found Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Progression": {
+      "main": [
+        [
+          {
+            "node": "Update Character Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Skill Progression": {
+      "main": [
+        [
+          {
+            "node": "Update Skill Progression",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Character Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Skill Progression": {
+      "main": [
+        [
+          {
+            "node": "Update Character Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Character Stats": {
+      "main": [
+        [
+          {
+            "node": "Check Level Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Level Up": {
+      "main": [
+        [
+          {
+            "node": "Log Level Up Event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Trigger Achievements",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Combine Progression Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Level Up Event": {
+      "main": [
+        [
+          {
+            "node": "Combine Progression Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Trigger Achievements": {
+      "main": [
+        [
+          {
+            "node": "Trigger Achievement Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Combine Progression Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Achievement Check": {
+      "main": [
+        [
+          {
+            "node": "Combine Progression Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Progression Results": {
+      "main": [
+        [
+          {
+            "node": "Send Progression Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "subflow-character-progression",
+  "tags": [],
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T16:26:15.000Z",
+  "createdAt": "2025-10-30T16:26:15.000Z"
+}

@@ -1,0 +1,334 @@
+﻿{
+  "name": "DAMAGE_CALC",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bad-habit-battle",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_bad_habit",
+      "name": "Webhook - Bad Habit Battle",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "bad-habit-damage"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT h.*, c.hp, c.level, c.id as character_id, s.level as skill_level, sbs_stats.total_systems, sbs_stats.completed_systems, sbs_stats.max_routine_streak FROM habits h JOIN characters c ON h.character_id = c.id JOIN skills s ON h.skill_id = s.id LEFT JOIN (SELECT c2.id, COUNT(DISTINCT sys.id) as total_systems, COUNT(CASE WHEN sys.current_stage = 'complete' THEN 1 END) as completed_systems, COALESCE(MAX(r.streak), 0) as max_routine_streak FROM characters c2 LEFT JOIN systems sys ON sys.user_id = c2.user_id LEFT JOIN routines r ON r.system_id = sys.id WHERE c2.id = h.character_id GROUP BY c2.id) sbs_stats ON sbs_stats.id = c.id WHERE h.id = $1 AND h.type = 'bad'",
+        "options": {}
+      },
+      "id": "fetch_bad_habit_data",
+      "name": "Fetch Bad Habit Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// SBS-Enhanced Damage Calculation with System Defense\nconst habitData = $input.first().json;\nconst baseDamage = Math.abs(habitData.hp_value) || 15;\nconst characterLevel = habitData.level || 1;\nconst skillLevel = habitData.skill_level || 1;\nconst currentHP = habitData.hp || 100;\n\n// SBS System Defense Calculations\nconst totalSystems = habitData.total_systems || 0;\nconst completedSystems = habitData.completed_systems || 0;\nconst maxRoutineStreak = habitData.max_routine_streak || 0;\n\n// SBS Defense Modifiers\nconst sbsSystemDefense = Math.min(completedSystems * 0.1, 0.5); // Max 50% defense from completed systems\nconst routineStreakDefense = Math.min(maxRoutineStreak * 0.02, 0.3); // Max 30% defense from routine streaks\nconst skillDefense = Math.max(0.1, 1 - (skillLevel * 0.05)); // Original skill-based defense\n\n// Combined Defense Calculation\nconst totalDefenseModifier = Math.max(0.1, skillDefense - sbsSystemDefense - routineStreakDefense);\nconst finalDamage = Math.floor(baseDamage * totalDefenseModifier);\n\n// Calculate new HP (minimum 0)\nconst newHP = Math.max(0, currentHP - finalDamage);\nconst isDefeated = newHP === 0;\n\n// Generate SBS-Enhanced Battle Narrative\nlet battleNarrative = `ðŸ”´ Bad Habit Battle: ${habitData.name}\\n\\n`;\nbattleNarrative += `âš”ï¸ Base Damage: ${baseDamage}\\n`;\n\nif (completedSystems > 0) {\n  battleNarrative += `ðŸ›¡ï¸ SBS System Defense: -${Math.round(sbsSystemDefense * 100)}% (${completedSystems} completed systems)\\n`;\n}\nif (maxRoutineStreak > 0) {\n  battleNarrative += `ðŸ”¥ Routine Streak Defense: -${Math.round(routineStreakDefense * 100)}% (${maxRoutineStreak} day streak)\\n`;\n}\nbattleNarrative += `âš¡ Final Damage: ${finalDamage}\\n\\n`;\n\nif (isDefeated) {\n  battleNarrative += \"ðŸ’€ Your life systems couldn't protect you! Recovery needed at the Hotel.\";\n} else if (newHP < 30) {\n  battleNarrative += \"âš ï¸ Your HP is critically low! Your SBS systems need strengthening.\";\n} else if (sbsSystemDefense > 0 || routineStreakDefense > 0) {\n  battleNarrative += \"âœ¨ Your SBS systems and routines protected you from worse damage!\";\n} else {\n  battleNarrative += \"ðŸ“ˆ Build more SBS systems and maintain routine streaks for better defense!\";\n}\n\nreturn [{\n  json: {\n    habitId: habitData.id,\n    characterId: habitData.character_id,\n    skillId: habitData.skill_id,\n    damageDealt: finalDamage,\n    oldHP: currentHP,\n    newHP: newHP,\n    isDefeated: isDefeated,\n    battleNarrative: battleNarrative,\n    defenseBreakdown: {\n      skillDefense: Math.round((1 - skillDefense) * 100),\n      sbsSystemDefense: Math.round(sbsSystemDefense * 100),\n      routineStreakDefense: Math.round(routineStreakDefense * 100),\n      totalDefense: Math.round((1 - totalDefenseModifier) * 100)\n    },\n    sbsStats: {\n      totalSystems: totalSystems,\n      completedSystems: completedSystems,\n      maxRoutineStreak: maxRoutineStreak\n    }\n  }\n}];"
+      },
+      "id": "calculate_damage",
+      "name": "Calculate Damage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-ai-content-generation",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"content_type\": \"battle_narrative\",\n  \"character_id\": $json.characterId,\n  \"context\": {\n    \"habit_name\": $('Fetch Bad Habit Data').item.json.name,\n    \"base_damage\": $('Fetch Bad Habit Data').item.json.hp_value,\n    \"final_damage\": $json.damageDealt,\n    \"old_hp\": $json.oldHP,\n    \"new_hp\": $json.newHP,\n    \"is_defeated\": $json.isDefeated,\n    \"sbs_systems\": $json.sbsStats.completedSystems,\n    \"routine_streak\": $json.sbsStats.maxRoutineStreak,\n    \"defense_breakdown\": $json.defenseBreakdown,\n    \"character_level\": $('Fetch Bad Habit Data').item.json.level\n  }\n} }}",
+        "options": {}
+      },
+      "id": "enhance_battle_narrative",
+      "name": "Enhance Battle Narrative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI-enhanced battle narrative\nconst originalData = $('Calculate Damage').item.json;\nconst aiResponse = $json;\n\n// Try to parse AI response, fallback to original narrative if AI fails\nlet enhancedNarrative = originalData.battleNarrative;\ntry {\n  if (aiResponse.content && typeof aiResponse.content === 'string') {\n    const parsedContent = JSON.parse(aiResponse.content);\n    if (parsedContent.narrative && parsedContent.narrative.length > 20) {\n      enhancedNarrative = parsedContent.narrative;\n    }\n  }\n} catch (error) {\n  // Fallback to original narrative\n  console.log('AI narrative enhancement failed, using original:', error.message);\n}\n\nreturn {\n  json: {\n    ...originalData,\n    battleNarrative: enhancedNarrative,\n    ai_enhanced: enhancedNarrative !== originalData.battleNarrative\n  }\n};"
+      },
+      "id": "process_ai_narrative",
+      "name": "Process AI Narrative",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"UPDATE characters SET hp = $1 WHERE id = $2 RETURNING *\",\n  \"parameters\": [$json.newHP, $json.characterId],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "update_character_hp",
+      "name": "Update Character HP (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"UPDATE habits SET last_completed = CURRENT_DATE WHERE id = $1 RETURNING *\",\n  \"parameters\": [$json.habitId],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "update_habit_timestamp",
+      "name": "Update Habit Timestamp (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Update Character HP').item.json.id,\n  \"event_type\": \"bad_habit_battle\",\n  \"hp_change\": $('Calculate Damage').item.json.damage,\n  \"description\": \"Bad habit battle: took \" + Math.abs($('Calculate Damage').item.json.damage) + \" damage\"\n} }}",
+        "options": {}
+      },
+      "id": "log_battle_event",
+      "name": "Log Battle Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2.4,
+      "position": [1250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"user\",\n  \"actor_id\": $json.characterId,\n  \"target_type\": \"habit\",\n  \"target_id\": $json.habitId,\n  \"action\": \"bad_habit_battle\",\n  \"detail\": {\n    \"damage_dealt\": $json.damageDealt,\n    \"old_hp\": $json.oldHP,\n    \"new_hp\": $json.newHP,\n    \"is_defeated\": $json.isDefeated,\n    \"defense_breakdown\": $json.defenseBreakdown,\n    \"sbs_stats\": $json.sbsStats\n  },\n  \"outcome\": $json.isDefeated ? \"failure\" : \"success\",\n  \"severity\": $json.isDefeated ? \"warning\" : \"info\",\n  \"source\": \"damage_calc_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_system_battle",
+      "name": "Log System Battle (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-achievement-check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $json.characterId }}"
+            },
+            {
+              "name": "trigger_reason",
+              "value": "SBS defense battle completed"
+            },
+            {
+              "name": "event_data",
+              "value": "={{ {\n  trigger_type: 'sbs_defense_battle',\n  battle_result: {\n    damageDealt: $json.damageDealt,\n    newHP: $json.newHP,\n    isDefeated: $json.isDefeated\n  }\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_sbs_achievements",
+      "name": "Trigger SBS Defense Achievements",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "response_body",
+              "value": "={{ {\n  \"success\": true,\n  \"battleResult\": {\n    \"habitName\": $('Fetch Bad Habit Data').item.json.name,\n    \"damageDealt\": $json.damageDealt,\n    \"newHP\": $json.newHP,\n    \"isDefeated\": $json.isDefeated,\n    \"narrative\": $json.battleNarrative,\n    \"sbsDefense\": $json.defenseBreakdown,\n    \"sbsStats\": $json.sbsStats\n  }\n} }}"
+            },
+            {
+              "name": "status_code",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "respond_battle_result",
+      "name": "Respond SBS Battle Result (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1850, 300],
+      "continueOnFail": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Bad Habit Battle": {
+      "main": [
+        [
+          {
+            "node": "Fetch Bad Habit Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Bad Habit Data": {
+      "main": [
+        [
+          {
+            "node": "Calculate Damage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Damage": {
+      "main": [
+        [
+          {
+            "node": "Update Character HP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Character HP": {
+      "main": [
+        [
+          {
+            "node": "Update Habit Timestamp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Habit Timestamp": {
+      "main": [
+        [
+          {
+            "node": "Log Battle Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Battle Event": {
+      "main": [
+        [
+          {
+            "node": "Log System Battle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System Battle": {
+      "main": [
+        [
+          {
+            "node": "Trigger SBS Defense Achievements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger SBS Defense Achievements": {
+      "main": [
+        [
+          {
+            "node": "Respond SBS Battle Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "life-game-production"
+  },
+  "id": "3",
+  "tags": []
+}

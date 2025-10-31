@@ -1,0 +1,669 @@
+{
+  "name": "SHOP_CHECK",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "shop/purchase",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_purchase",
+      "name": "Webhook - Purchase Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "shop-purchase"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "character_id",
+              "name": "characterId",
+              "value": "={{ $json.body.character_id }}",
+              "type": "number"
+            },
+            {
+              "id": "item_id",
+              "name": "itemId",
+              "value": "={{ $json.body.item_id }}",
+              "type": "number"
+            },
+            {
+              "id": "quantity",
+              "name": "quantity",
+              "value": "={{ $json.body.quantity || 1 }}",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "id": "parse_request",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"SELECT i.id, i.name, i.cost, i.item_type, i.rarity, i.description, i.effect FROM items i WHERE i.id = $1\",\n  \"parameters\": [$json.itemId],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "fetch_item",
+      "name": "Fetch Item Details (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/subflow-character-data",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Parse Request').item.json.characterId,\n  \"include_skills\": false,\n  \"include_habits\": false,\n  \"include_systems\": false,\n  \"include_achievements\": false\n} }}",
+        "options": {}
+      },
+      "id": "fetch_character",
+      "name": "Fetch Character",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        650,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "total_cost",
+              "name": "totalCost",
+              "value": "={{ $('Fetch Item Details').item.json.cost * $('Parse Request').item.json.quantity }}",
+              "type": "number"
+            },
+            {
+              "id": "user_coins",
+              "name": "userCoins",
+              "value": "={{ $('Fetch Character').item.json.coins }}",
+              "type": "number"
+            },
+            {
+              "id": "can_afford",
+              "name": "canAfford",
+              "value": "={{ $('Fetch Character').item.json.coins >= ($('Fetch Item Details').item.json.cost * $('Parse Request').item.json.quantity) }}",
+              "type": "boolean"
+            },
+            {
+              "id": "item_data",
+              "name": "itemData",
+              "value": "={{ $('Fetch Item Details').item.json }}",
+              "type": "object"
+            },
+            {
+              "id": "character_data",
+              "name": "characterData",
+              "value": "={{ $('Fetch Character').item.json }}",
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "id": "validate_purchase",
+      "name": "Validate Purchase",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        850,
+        375
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "can_afford_check",
+              "leftValue": "={{ $json.canAfford }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if_can_afford",
+      "name": "Can Afford?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        375
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"UPDATE characters SET coins = coins - $1 WHERE id = $2 RETURNING coins\",\n  \"parameters\": [\n    $('Validate Purchase').item.json.totalCost,\n    $('Parse Request').item.json.characterId\n  ],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "deduct_coins",
+      "name": "Deduct Coins (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"INSERT INTO inventory (character_id, item_id, quantity) VALUES ($1, $2, $3) ON CONFLICT (character_id, item_id) DO UPDATE SET quantity = inventory.quantity + $3 RETURNING *\",\n  \"parameters\": [\n    $('Parse Request').item.json.characterId,\n    $('Parse Request').item.json.itemId,\n    $('Parse Request').item.json.quantity\n  ],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "add_to_inventory",
+      "name": "Add to Inventory (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"INSERT INTO transactions (character_id, type, amount, item_id, description) VALUES ($1, 'spend', $2, $3, $4) RETURNING *\",\n  \"parameters\": [\n    $('Parse Request').item.json.characterId,\n    $('Validate Purchase').item.json.totalCost,\n    $('Parse Request').item.json.itemId,\n    \"Purchased \" + $('Parse Request').item.json.quantity + \"x \" + $('Validate Purchase').item.json.itemData.name\n  ],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_transaction",
+      "name": "Log Transaction (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"character_id\": $('Parse Request').item.json.characterId,\n  \"event_type\": \"shop_purchase\",\n  \"coins_change\": -$('Validate Purchase').item.json.totalCost,\n  \"description\": \"Shop purchase: \" + $('Validate Purchase').item.json.items.map(item => item.name).join(', ')\n} }}",
+        "options": {}
+      },
+      "id": "log_event",
+      "name": "Log Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"user\",\n  \"actor_id\": $('Validate Purchase').item.json.characterData.user_id,\n  \"target_type\": \"item\",\n  \"target_id\": $('Parse Request').item.json.itemId,\n  \"action\": \"shop_purchase\",\n  \"detail\": {\n    \"itemName\": $('Validate Purchase').item.json.itemData.name,\n    \"quantity\": $('Parse Request').item.json.quantity,\n    \"cost\": $('Validate Purchase').item.json.totalCost,\n    \"remainingCoins\": $('Deduct Coins').item.json.coins\n  },\n  \"outcome\": \"success\",\n  \"severity\": \"info\",\n  \"source\": \"shop_check_flow_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_system",
+      "name": "Log System (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-achievement-check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "character_id",
+              "value": "={{ $('Validate Purchase').item.json.characterData.id }}"
+            },
+            {
+              "name": "trigger_source",
+              "value": "shop_purchase"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger_shop_achievements",
+      "name": "Trigger SBS Achievement Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if this is an SBS-related item and apply bonuses\nconst itemData = $('Validate Purchase').item.json.itemData;\nconst characterData = $('Validate Purchase').item.json.characterData;\nconst quantity = $('Parse Request').item.json.quantity;\n\n// SBS Item Categories\nconst sbsItemTypes = {\n  'system_blueprint': { bonus_xp: 100, bonus_coins: 50, effect: 'SBS System Development' },\n  'automation_tool': { bonus_xp: 75, bonus_coins: 25, effect: 'SBS Automation Enhancement' },\n  'habit_tracker': { bonus_xp: 50, bonus_coins: 30, effect: 'SBS Habit Optimization' },\n  'efficiency_booster': { bonus_xp: 60, bonus_coins: 40, effect: 'SBS Efficiency Multiplier' },\n  'life_architect': { bonus_xp: 150, bonus_coins: 100, effect: 'Master SBS Builder Tools' }\n};\n\n// Check if item is SBS-related\nconst isSBSItem = itemData.item_type in sbsItemTypes || \n                  itemData.name.toLowerCase().includes('sbs') ||\n                  itemData.description.toLowerCase().includes('system') ||\n                  itemData.description.toLowerCase().includes('automation');\n\nlet sbsBonus = { xp: 0, coins: 0, effect: null };\n\nif (isSBSItem) {\n  const sbsType = sbsItemTypes[itemData.item_type] || { bonus_xp: 25, bonus_coins: 15, effect: 'SBS Enhancement' };\n  sbsBonus = {\n    xp: sbsType.bonus_xp * quantity,\n    coins: sbsType.bonus_coins * quantity,\n    effect: sbsType.effect\n  };\n}\n\nreturn {\n  json: {\n    item_id: itemData.id,\n    item_name: itemData.name,\n    character_id: characterData.id,\n    is_sbs_item: isSBSItem,\n    sbs_bonus: sbsBonus,\n    purchase_data: {\n      item: itemData,\n      character: characterData,\n      quantity: quantity\n    }\n  }\n};"
+      },
+      "id": "check_sbs_item_bonuses",
+      "name": "Check SBS Item Bonuses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "sbs_item_check",
+              "leftValue": "={{ $('Check SBS Item Bonuses').item.json.is_sbs_item }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "if_sbs_item",
+      "name": "If SBS Item",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-database-query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"operation\": \"executeQuery\",\n  \"query\": \"UPDATE characters SET xp = xp + $1, coins = coins + $2 WHERE id = $3 RETURNING *\",\n  \"parameters\": [\n    $('Check SBS Item Bonuses').item.json.sbs_bonus.xp,\n    $('Check SBS Item Bonuses').item.json.sbs_bonus.coins,\n    $('Check SBS Item Bonuses').item.json.character_id\n  ],\n  \"return_first_only\": true\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "apply_sbs_bonuses",
+      "name": "Apply SBS Bonuses (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  success: true,\n  message: $('Check SBS Item Bonuses').item.json.is_sbs_item ? 'SBS Purchase successful with bonuses!' : 'Purchase successful!',\n  item: $('Validate Purchase').item.json.itemData,\n  quantity: $('Parse Request').item.json.quantity,\n  totalCost: $('Validate Purchase').item.json.totalCost,\n  remainingCoins: $('Deduct Coins').item.json.coins,\n  inventory: $('Add to Inventory').item.json,\n  sbs_enhancement: {\n    is_sbs_item: $('Check SBS Item Bonuses').item.json.is_sbs_item,\n    sbs_bonus: $('Check SBS Item Bonuses').item.json.sbs_bonus,\n    effect: $('Check SBS Item Bonuses').item.json.sbs_bonus.effect\n  }\n} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "success_response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{ $vars.SUBFLOW_BASE_URL }}/webhook/subflow-log-system-event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"actor_type\": \"user\",\n  \"actor_id\": $('Validate Purchase').item.json.characterData.user_id,\n  \"target_type\": \"item\",\n  \"target_id\": $('Parse Request').item.json.itemId,\n  \"action\": \"shop_purchase_failed\",\n  \"detail\": {\n    \"reason\": \"insufficient_coins\",\n    \"required\": $('Validate Purchase').item.json.totalCost,\n    \"available\": $('Validate Purchase').item.json.userCoins\n  },\n  \"outcome\": \"failure\",\n  \"severity\": \"warning\",\n  \"source\": \"shop_check_flow_workflow\"\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "log_failure",
+      "name": "Log Failure (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  success: false,\n  error: 'Insufficient coins',\n  required: $('Validate Purchase').item.json.totalCost,\n  available: $('Validate Purchase').item.json.userCoins,\n  shortfall: $('Validate Purchase').item.json.totalCost - $('Validate Purchase').item.json.userCoins\n} }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "error_response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1450,
+        450
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Purchase Request": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "Fetch Item Details",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Character",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Item Details": {
+      "main": [
+        [
+          {
+            "node": "Validate Purchase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Character": {
+      "main": [
+        [
+          {
+            "node": "Validate Purchase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Purchase": {
+      "main": [
+        [
+          {
+            "node": "Can Afford?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Afford?": {
+      "main": [
+        [
+          {
+            "node": "Deduct Coins",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduct Coins": {
+      "main": [
+        [
+          {
+            "node": "Add to Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Inventory": {
+      "main": [
+        [
+          {
+            "node": "Log Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Transaction": {
+      "main": [
+        [
+          {
+            "node": "Log Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event": {
+      "main": [
+        [
+          {
+            "node": "Log System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log System": {
+      "main": [
+        [
+          {
+            "node": "Trigger SBS Achievement Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger SBS Achievement Check": {
+      "main": [
+        [
+          {
+            "node": "Check SBS Item Bonuses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check SBS Item Bonuses": {
+      "main": [
+        [
+          {
+            "node": "If SBS Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If SBS Item": {
+      "main": [
+        [
+          {
+            "node": "Apply SBS Bonuses",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply SBS Bonuses": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Failure": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": true,
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

@@ -1,0 +1,2 @@
+# This file ensures the n8n data directory is preserved in git
+# The actual data files are excluded by .gitignore

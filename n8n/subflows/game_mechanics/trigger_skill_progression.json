@@ -1,0 +1,208 @@
+{
+  "name": "SUBFLOW: Trigger Skill Progression",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-skill-progression",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_trigger_skill_progression",
+      "name": "Webhook - Trigger Skill Progression",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-skill-progression"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "system_id_check",
+              "leftValue": "={{ $json.body.system_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "progression_type_check",
+              "leftValue": "={{ $json.body.progression_type }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate_required_fields",
+      "name": "Validate Required Fields",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/skill-progression",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.body.system_id }}"
+            },
+            {
+              "name": "progression_type",
+              "value": "={{ $json.body.progression_type }}"
+            },
+            {
+              "name": "source",
+              "value": "={{ $json.body.source || 'subflow' }}"
+            },
+            {
+              "name": "bonus_xp",
+              "value": "={{ $json.body.bonus_xp || 0 }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "call_skill_progression",
+      "name": "Call Skill Progression",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        650,
+        200
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Call Skill Progression').item.json }}",
+        "options": {}
+      },
+      "id": "respond_success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": false, \"error\": \"Missing required fields: system_id and progression_type are required\" } }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "respond_error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        650,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "webhook_trigger_skill_progression": {
+      "main": [
+        [
+          {
+            "node": "validate_required_fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate_required_fields": {
+      "main": [
+        [
+          {
+            "node": "call_skill_progression",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "respond_error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "call_skill_progression": {
+      "main": [
+        [
+          {
+            "node": "respond_success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "subflow-skill-progression",
+  "tags": [
+    "subflow",
+    "skill-progression",
+    "reusable"
+  ],
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

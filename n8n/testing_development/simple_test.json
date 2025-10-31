@@ -1,0 +1,82 @@
+{
+  "name": "Simple Goal Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-goal",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "test-goal"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-respond-to-webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "response_body",
+              "value": "={{ { \"success\": true, \"message\": \"Test successful!\", \"timestamp\": new Date().toISOString() } }}"
+            },
+            {
+              "name": "status_code",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "respond1",
+      "name": "Send Response (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        440,
+        300
+      ],
+      "continueOnFail": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Response (Subflow)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "simple-test",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "simple-goal-test",
+  "tags": []
+}

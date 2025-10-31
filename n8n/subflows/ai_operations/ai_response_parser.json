@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "instanceId": "subflow-ai-response-parser"
+  },
+  "name": "SUBFLOW: AI Response Parser",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "subflow-ai-response-parser",
+        "options": {}
+      },
+      "id": "webhook_ai_parser",
+      "name": "Webhook - AI Response Parser",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "subflow-ai-response-parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal AI Response Parser with Fallback Handling\nconst responseData = $json;\nconst responseText = responseData.response || responseData.text || responseData.content || responseData.output || '';\nconst expectedFormat = responseData.expected_format || 'auto'; // auto, json, text, array\nconst fallbackText = responseData.fallback_text || 'AI parsing failed - using fallback';\nconst contentType = responseData.content_type || 'general';\n\n// Enhanced parsing logic\nlet parsedContent = null;\nlet parseSuccess = false;\nlet parseMethod = 'none';\nconst parseErrors = [];\n\n// Function to extract JSON from markdown code blocks\nfunction extractFromMarkdown(text) {\n  // Try to find JSON in ```json blocks\n  const jsonMarkdownMatch = text.match(/```json\\s*([\\s\\S]*?)```/);\n  if (jsonMarkdownMatch) {\n    return jsonMarkdownMatch[1].trim();\n  }\n  \n  // Try to find JSON in ``` blocks\n  const codeBlockMatch = text.match(/```\\s*([\\s\\S]*?)```/);\n  if (codeBlockMatch) {\n    return codeBlockMatch[1].trim();\n  }\n  \n  return null;\n}\n\n// Function to extract JSON directly from text\nfunction extractJSONFromText(text) {\n  // Look for JSON object patterns\n  const objectMatch = text.match(/\\{[\\s\\S]*\\}/);\n  if (objectMatch) {\n    return objectMatch[0];\n  }\n  \n  // Look for JSON array patterns\n  const arrayMatch = text.match(/\\[[\\s\\S]*\\]/);\n  if (arrayMatch) {\n    return arrayMatch[0];\n  }\n  \n  return null;\n}\n\n// Attempt parsing based on expected format\nif (expectedFormat === 'json' || expectedFormat === 'auto') {\n  // Method 1: Direct JSON parsing\n  try {\n    parsedContent = JSON.parse(responseText);\n    parseSuccess = true;\n    parseMethod = 'direct_json';\n  } catch (error) {\n    parseErrors.push({ method: 'direct_json', error: error.message });\n    \n    // Method 2: Extract from markdown code blocks\n    try {\n      const markdownJson = extractFromMarkdown(responseText);\n      if (markdownJson) {\n        parsedContent = JSON.parse(markdownJson);\n        parseSuccess = true;\n        parseMethod = 'markdown_extraction';\n      }\n    } catch (error) {\n      parseErrors.push({ method: 'markdown_extraction', error: error.message });\n      \n      // Method 3: Extract JSON patterns from text\n      try {\n        const extractedJson = extractJSONFromText(responseText);\n        if (extractedJson) {\n          parsedContent = JSON.parse(extractedJson);\n          parseSuccess = true;\n          parseMethod = 'pattern_extraction';\n        }\n      } catch (error) {\n        parseErrors.push({ method: 'pattern_extraction', error: error.message });\n      }\n    }\n  }\n}\n\n// Handle array format expectation\nif (expectedFormat === 'array' && parseSuccess && !Array.isArray(parsedContent)) {\n  parsedContent = [parsedContent];\n  parseMethod += '_array_wrapped';\n}\n\n// Content type specific processing\nconst structuredTypes = ['skill_suggestion', 'habit_suggestion', 'routine_creation', 'achievement_description', 'system_analysis', 'mission_generation', 'event_generation'];\nconst isStructuredContent = structuredTypes.includes(contentType);\n\n// Generate fallback content for structured types\nif (!parseSuccess && isStructuredContent) {\n  switch (contentType) {\n    case 'skill_suggestion':\n      parsedContent = {\n        name: 'General Skill',\n        description: fallbackText,\n        category: 'Learning & Knowledge'\n      };\n      break;\n    case 'habit_suggestion':\n      parsedContent = {\n        name: 'Daily Practice',\n        description: fallbackText,\n        frequency: 'daily'\n      };\n      break;\n    case 'mission_generation':\n      parsedContent = [{\n        title: 'Continue Your Journey',\n        description: fallbackText,\n        difficulty: 'medium',\n        xp_reward: 25\n      }];\n      break;\n    case 'event_generation':\n      parsedContent = [{\n        title: 'System Progress',\n        description: fallbackText,\n        effect: 'positive',\n        xp_change: 10\n      }];\n      break;\n    default:\n      parsedContent = { description: fallbackText };\n  }\n  parseMethod = 'fallback_generation';\n  parseSuccess = true;\n}\n\n// Calculate token usage estimate\nconst estimatedTokens = Math.ceil(responseText.length / 4);\n\n// Build comprehensive result\nconst result = {\n  success: parseSuccess,\n  parsed_content: parsedContent,\n  raw_response: responseText,\n  parsing: {\n    method_used: parseMethod,\n    expected_format: expectedFormat,\n    content_type: contentType,\n    is_structured: isStructuredContent,\n    parse_errors: parseErrors,\n    fallback_used: parseMethod.includes('fallback')\n  },\n  metadata: {\n    response_length: responseText.length,\n    estimated_tokens: estimatedTokens,\n    has_markdown: responseText.includes('```'),\n    has_json_patterns: /\\{[\\s\\S]*\\}|\\[[\\s\\S]*\\]/.test(responseText),\n    parsed_at: new Date().toISOString()\n  },\n  validation: {\n    is_valid_json: parseSuccess && parseMethod !== 'fallback_generation',\n    is_array: Array.isArray(parsedContent),\n    is_object: parsedContent && typeof parsedContent === 'object' && !Array.isArray(parsedContent),\n    content_keys: parsedContent && typeof parsedContent === 'object' ? Object.keys(parsedContent) : []\n  }\n};\n\nreturn {\n  json: result\n};"
+      },
+      "id": "parse_ai_response",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "id": "parsing_success",
+              "name": "success",
+              "value": "={{ $json.success }}"
+            }
+          ]
+        }
+      },
+      "id": "check_parsing_success",
+      "name": "Check Parsing Success",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"parsed_content\": $json.parsed_content,\n  \"parsing_method\": $json.parsing.method_used,\n  \"content_type\": $json.parsing.content_type,\n  \"metadata\": {\n    \"estimated_tokens\": $json.metadata.estimated_tokens,\n    \"response_length\": $json.metadata.response_length,\n    \"parsed_at\": $json.metadata.parsed_at\n  },\n  \"validation\": $json.validation\n} }}",
+        "options": {}
+      },
+      "id": "send_success_response",
+      "name": "Send Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        600,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"error\": \"AI response parsing failed\",\n  \"raw_response\": $json.raw_response,\n  \"parse_errors\": $json.parsing.parse_errors,\n  \"expected_format\": $json.parsing.expected_format,\n  \"content_type\": $json.parsing.content_type,\n  \"suggestions\": [\n    \"Check if the AI response contains valid JSON\",\n    \"Verify the response format matches expectations\",\n    \"Consider using fallback content for this content type\"\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "send_error_response",
+      "name": "Send Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [
+        600,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - AI Response Parser": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Check Parsing Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Parsing Success": {
+      "main": [
+        [
+          {
+            "node": "Send Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": true,
+  "versionId": "1",
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

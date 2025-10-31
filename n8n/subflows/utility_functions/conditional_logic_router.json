@@ -1,0 +1,404 @@
+{
+  "name": "Conditional Logic Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-conditional-router",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_conditional_router",
+      "name": "Webhook - Conditional Router",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-conditional-router"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Universal Conditional Logic Router\nconst requestData = $json;\nconst conditions = requestData.conditions || [];\nconst routingMode = requestData.routing_mode || 'first_match'; // first_match, all_matches, priority_based\nconst defaultRoute = requestData.default_route || 'no_match';\nconst includeDebugInfo = requestData.include_debug_info || false;\n\n// Validate input\nif (!Array.isArray(conditions) || conditions.length === 0) {\n  return {\n    json: {\n      success: false,\n      error: 'conditions array is required and must not be empty',\n      statusCode: 400\n    }\n  };\n}\n\n// Evaluation functions for different condition types\nconst evaluators = {\n  equals: (value1, value2) => value1 === value2,\n  not_equals: (value1, value2) => value1 !== value2,\n  greater_than: (value1, value2) => Number(value1) > Number(value2),\n  less_than: (value1, value2) => Number(value1) < Number(value2),\n  greater_or_equal: (value1, value2) => Number(value1) >= Number(value2),\n  less_or_equal: (value1, value2) => Number(value1) <= Number(value2),\n  contains: (value1, value2) => String(value1).includes(String(value2)),\n  not_contains: (value1, value2) => !String(value1).includes(String(value2)),\n  starts_with: (value1, value2) => String(value1).startsWith(String(value2)),\n  ends_with: (value1, value2) => String(value1).endsWith(String(value2)),\n  in_list: (value1, value2) => Array.isArray(value2) ? value2.includes(value1) : false,\n  not_in_list: (value1, value2) => Array.isArray(value2) ? !value2.includes(value1) : true,\n  regex_match: (value1, value2) => {\n    try {\n      const regex = new RegExp(value2);\n      return regex.test(String(value1));\n    } catch {\n      return false;\n    }\n  },\n  is_empty: (value1) => value1 === null || value1 === undefined || value1 === '',\n  is_not_empty: (value1) => value1 !== null && value1 !== undefined && value1 !== '',\n  is_number: (value1) => !isNaN(Number(value1)) && isFinite(Number(value1)),\n  is_boolean: (value1) => typeof value1 === 'boolean' || value1 === 'true' || value1 === 'false',\n  length_equals: (value1, value2) => String(value1).length === Number(value2),\n  length_greater: (value1, value2) => String(value1).length > Number(value2),\n  length_less: (value1, value2) => String(value1).length < Number(value2)\n};\n\n// Evaluate a single condition\nfunction evaluateCondition(condition, inputData) {\n  const { field, operator, value, custom_check } = condition;\n  \n  // Get field value from input data\n  let fieldValue;\n  if (field) {\n    // Support nested field access with dot notation\n    const fieldParts = field.split('.');\n    fieldValue = fieldParts.reduce((obj, part) => obj?.[part], inputData);\n  } else {\n    fieldValue = inputData;\n  }\n  \n  // Handle custom checks for common SBS patterns\n  if (custom_check) {\n    switch (custom_check) {\n      case 'stage_complete':\n        return fieldValue === 'complete' || fieldValue === 'finished';\n      case 'stage_pending':\n        return fieldValue === 'pending' || fieldValue === 'in_progress';\n      case 'user_authenticated':\n        return fieldValue && (fieldValue.user_id || fieldValue.character_id);\n      case 'valid_id':\n        return fieldValue && !isNaN(parseInt(fieldValue)) && parseInt(fieldValue) > 0;\n      case 'valid_day':\n        const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'daily'];\n        return validDays.includes(fieldValue);\n      case 'sbs_stage':\n        const validStages = ['design', 'build', 'automate', 'review', 'complete'];\n        return validStages.includes(fieldValue);\n      case 'positive_number':\n        return !isNaN(Number(fieldValue)) && Number(fieldValue) > 0;\n      case 'level_milestone':\n        return !isNaN(Number(fieldValue)) && Number(fieldValue) % 5 === 0;\n      case 'streak_bonus':\n        return !isNaN(Number(fieldValue)) && Number(fieldValue) >= 7;\n      default:\n        return false;\n    }\n  }\n  \n  // Use standard evaluator\n  const evaluator = evaluators[operator];\n  if (!evaluator) {\n    throw new Error(`Unknown operator: ${operator}`);\n  }\n  \n  // Handle single-parameter evaluators\n  if (['is_empty', 'is_not_empty', 'is_number', 'is_boolean'].includes(operator)) {\n    return evaluator(fieldValue);\n  }\n  \n  return evaluator(fieldValue, value);\n}\n\n// Evaluate condition group (AND/OR logic)\nfunction evaluateConditionGroup(conditionGroup, inputData) {\n  const { logic, conditions: groupConditions } = conditionGroup;\n  const results = [];\n  \n  for (const condition of groupConditions) {\n    try {\n      const result = evaluateCondition(condition, inputData);\n      results.push(result);\n    } catch (error) {\n      results.push(false);\n    }\n  }\n  \n  if (logic === 'OR') {\n    return results.some(result => result === true);\n  } else { // Default AND\n    return results.every(result => result === true);\n  }\n}\n\n// Process all conditions and determine routes\nconst evaluationResults = [];\nconst matchedRoutes = [];\nconst debugInfo = [];\n\nfor (let i = 0; i < conditions.length; i++) {\n  const condition = conditions[i];\n  let conditionMet = false;\n  let evaluationError = null;\n  \n  try {\n    if (condition.conditions && Array.isArray(condition.conditions)) {\n      // This is a condition group\n      conditionMet = evaluateConditionGroup(condition, requestData);\n    } else {\n      // This is a single condition\n      conditionMet = evaluateCondition(condition, requestData);\n    }\n  } catch (error) {\n    evaluationError = error.message;\n    conditionMet = false;\n  }\n  \n  evaluationResults.push({\n    condition_index: i,\n    condition_met: conditionMet,\n    error: evaluationError,\n    route: condition.route || `route_${i}`,\n    priority: condition.priority || 0\n  });\n  \n  if (conditionMet) {\n    matchedRoutes.push({\n      route: condition.route || `route_${i}`,\n      condition_index: i,\n      priority: condition.priority || 0,\n      route_data: condition.route_data || {}\n    });\n  }\n  \n  if (includeDebugInfo) {\n    debugInfo.push({\n      condition_index: i,\n      condition: condition,\n      field_value: condition.field ? requestData[condition.field] : requestData,\n      evaluation_result: conditionMet,\n      error: evaluationError\n    });\n  }\n}\n\n// Determine final route based on routing mode\nlet selectedRoute = defaultRoute;\nlet routeData = {};\n\nif (matchedRoutes.length > 0) {\n  if (routingMode === 'first_match') {\n    selectedRoute = matchedRoutes[0].route;\n    routeData = matchedRoutes[0].route_data;\n  } else if (routingMode === 'priority_based') {\n    // Sort by priority (highest first) then by condition order\n    const sortedRoutes = matchedRoutes.sort((a, b) => {\n      if (b.priority !== a.priority) {\n        return b.priority - a.priority;\n      }\n      return a.condition_index - b.condition_index;\n    });\n    selectedRoute = sortedRoutes[0].route;\n    routeData = sortedRoutes[0].route_data;\n  } else if (routingMode === 'all_matches') {\n    selectedRoute = 'multiple_matches';\n    routeData = {\n      matched_routes: matchedRoutes.map(match => ({\n        route: match.route,\n        priority: match.priority,\n        data: match.route_data\n      }))\n    };\n  }\n}\n\n// Build result\nconst result = {\n  success: true,\n  routing_result: {\n    selected_route: selectedRoute,\n    route_data: routeData,\n    routing_mode: routingMode,\n    total_conditions: conditions.length,\n    conditions_met: matchedRoutes.length,\n    evaluation_timestamp: new Date().toISOString()\n  },\n  matched_routes: matchedRoutes,\n  default_route_used: matchedRoutes.length === 0\n};\n\n// Add debug information if requested\nif (includeDebugInfo) {\n  result.debug_info = {\n    evaluation_results: evaluationResults,\n    detailed_conditions: debugInfo,\n    input_data_keys: Object.keys(requestData)\n  };\n}\n\n// Add routing suggestions for common patterns\nconst routingSuggestions = {\n  suggested_next_action: null,\n  workflow_hints: []\n};\n\nif (selectedRoute === 'no_match') {\n  routingSuggestions.suggested_next_action = 'handle_default_case';\n  routingSuggestions.workflow_hints.push('Consider adding a catch-all condition');\n}\n\nif (matchedRoutes.length > 1 && routingMode === 'first_match') {\n  routingSuggestions.workflow_hints.push('Multiple conditions matched - consider priority-based routing');\n}\n\nresult.routing_suggestions = routingSuggestions;\n\nreturn {\n  json: result\n};"
+      },
+      "id": "evaluate_conditions",
+      "name": "Evaluate Conditions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.routing_result.selected_route }}",
+                    "operation": "equal",
+                    "value2": "route_0"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "route_0"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.routing_result.selected_route }}",
+                    "operation": "equal",
+                    "value2": "route_1"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "route_1"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.routing_result.selected_route }}",
+                    "operation": "equal",
+                    "value2": "route_2"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "route_2"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.routing_result.selected_route }}",
+                    "operation": "equal",
+                    "value2": "route_3"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "route_3"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.routing_result.selected_route }}",
+                    "operation": "equal",
+                    "value2": "route_4"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "route_4"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{ $json.routing_result.selected_route }}",
+                    "operation": "equal",
+                    "value2": "multiple_matches"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "multiple_matches"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "route_switch",
+      "name": "Route Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle Route 0 execution\nconst routingData = $json;\nconst routeData = routingData.routing_result.route_data;\n\nreturn {\n  json: {\n    success: true,\n    route_executed: 'route_0',\n    route_data: routeData,\n    original_routing_data: routingData,\n    execution_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "handle_route_0",
+      "name": "Handle Route 0",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle Route 1 execution\nconst routingData = $json;\nconst routeData = routingData.routing_result.route_data;\n\nreturn {\n  json: {\n    success: true,\n    route_executed: 'route_1',\n    route_data: routeData,\n    original_routing_data: routingData,\n    execution_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "handle_route_1",
+      "name": "Handle Route 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle Route 2 execution\nconst routingData = $json;\nconst routeData = routingData.routing_result.route_data;\n\nreturn {\n  json: {\n    success: true,\n    route_executed: 'route_2',\n    route_data: routeData,\n    original_routing_data: routingData,\n    execution_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "handle_route_2",
+      "name": "Handle Route 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle Route 3 execution\nconst routingData = $json;\nconst routeData = routingData.routing_result.route_data;\n\nreturn {\n  json: {\n    success: true,\n    route_executed: 'route_3',\n    route_data: routeData,\n    original_routing_data: routingData,\n    execution_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "handle_route_3",
+      "name": "Handle Route 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle Route 4 execution\nconst routingData = $json;\nconst routeData = routingData.routing_result.route_data;\n\nreturn {\n  json: {\n    success: true,\n    route_executed: 'route_4',\n    route_data: routeData,\n    original_routing_data: routingData,\n    execution_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "handle_route_4",
+      "name": "Handle Route 4",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle multiple matches case\nconst routingData = $json;\nconst matchedRoutes = routingData.routing_result.route_data.matched_routes;\n\nreturn {\n  json: {\n    success: true,\n    route_executed: 'multiple_matches',\n    matched_routes: matchedRoutes,\n    route_count: matchedRoutes.length,\n    original_routing_data: routingData,\n    execution_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "handle_multiple_matches",
+      "name": "Handle Multiple Matches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle default/fallback case\nconst routingData = $json;\n\nreturn {\n  json: {\n    success: true,\n    route_executed: 'default_fallback',\n    selected_route: routingData.routing_result.selected_route,\n    reason: 'No conditions matched or unrecognized route',\n    original_routing_data: routingData,\n    execution_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "handle_default",
+      "name": "Handle Default Case",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "routing_response",
+      "name": "Routing Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "webhook_conditional_router": {
+      "main": [
+        [
+          {
+            "node": "evaluate_conditions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "evaluate_conditions": {
+      "main": [
+        [
+          {
+            "node": "route_switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "route_switch": {
+      "main": [
+        [
+          {
+            "node": "handle_route_0",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "handle_route_1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "handle_route_2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "handle_route_3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "handle_route_4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "handle_multiple_matches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "handle_default",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_route_0": {
+      "main": [
+        [
+          {
+            "node": "routing_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_route_1": {
+      "main": [
+        [
+          {
+            "node": "routing_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_route_2": {
+      "main": [
+        [
+          {
+            "node": "routing_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_route_3": {
+      "main": [
+        [
+          {
+            "node": "routing_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_route_4": {
+      "main": [
+        [
+          {
+            "node": "routing_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_multiple_matches": {
+      "main": [
+        [
+          {
+            "node": "routing_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "handle_default": {
+      "main": [
+        [
+          {
+            "node": "routing_response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": {},
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-12-28T20:00:00.000Z",
+  "versionId": "1",
+  "active": true,
+  "meta": {},
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

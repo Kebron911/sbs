@@ -1,0 +1,534 @@
+{
+  "name": "System Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "system-update",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-system-update",
+      "name": "Webhook - System Update",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        400
+      ],
+      "webhookId": "sbs-orchestrator-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT s.*, \n  ss.step, \n  ss.status as step_status,\n  ss.id as step_id\nFROM systems s\nLEFT JOIN system_steps ss ON s.id = ss.system_id\nWHERE s.id = $1\nAND ss.status = 'pending'\nORDER BY \n  CASE ss.step\n    WHEN 'define' THEN 1\n    WHEN 'design' THEN 2\n    WHEN 'build' THEN 3\n    WHEN 'automate' THEN 4\n    WHEN 'review' THEN 5\n  END\nLIMIT 1;",
+        "additionalFields": {
+          "queryParameters": "={{ [$json.body.id || $json.body.system_id] }}"
+        }
+      },
+      "id": "get-current-step",
+      "name": "Get Current Pending Step",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        450,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.step }}",
+              "operation": "equal",
+              "value2": "design"
+            }
+          ]
+        }
+      },
+      "id": "check-design-step",
+      "name": "Check Design Step",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.step }}",
+              "operation": "equal",
+              "value2": "build"
+            }
+          ]
+        }
+      },
+      "id": "check-build-step",
+      "name": "Check Build Step",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.step }}",
+              "operation": "equal",
+              "value2": "automate"
+            }
+          ]
+        }
+      },
+      "id": "check-automate-step",
+      "name": "Check Automate Step",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.step }}",
+              "operation": "equal",
+              "value2": "review"
+            }
+          ]
+        }
+      },
+      "id": "check-review-step",
+      "name": "Check Review Step",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "event",
+              "value": "design_canvas_generated"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  name: $json.name,\n  timestamp: new Date().toISOString(),\n  canvas_template: 'markdown'\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "design-handler",
+      "name": "Design Handler - Generate Canvas (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        200
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "chat_id",
+              "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "name": "text",
+              "value": "=🔧 *Build Phase Started*\n\nSystem: *{{ $json.name }}*\n\n📁 Creating folders and database schemas\n🔗 Setting up API integrations\n⚙️ Scaffolding automation structure"
+            },
+            {
+              "name": "parse_mode",
+              "value": "Markdown"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "build-handler",
+      "name": "Build Handler - Create Infrastructure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        850,
+        350
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "event",
+              "value": "automation_configured"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  triggers_added: true,\n  schedules_created: true,\n  timestamp: new Date().toISOString()\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "automate-handler",
+      "name": "Automate Handler - Setup Triggers (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        500
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-log-system-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "event",
+              "value": "review_scheduled"
+            },
+            {
+              "name": "details",
+              "value": "={{ JSON.stringify({\n  next_review: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),\n  review_frequency: 'monthly',\n  timestamp: new Date().toISOString()\n}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "review-handler",
+      "name": "Review Handler - Schedule Review (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        850,
+        650
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE system_steps\nSET status = 'complete',\n    updated_at = NOW()\nWHERE id = $1\nRETURNING *;",
+        "additionalFields": {
+          "queryParameters": "={{ [$json.step_id] }}"
+        }
+      },
+      "id": "mark-step-complete",
+      "name": "Mark Step Complete",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL SBS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/subflow-system-stage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "system_id",
+              "value": "={{ $json.id || $json.system_id }}"
+            },
+            {
+              "name": "action",
+              "value": "advance_stage"
+            },
+            {
+              "name": "source",
+              "value": "orchestrator"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-system-stage",
+      "name": "Update System Stage (Subflow)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": $json.success || true,\n  \"system_id\": $json.system_id,\n  \"step_completed\": $json.step_completed,\n  \"next_stage\": $json.current_stage || $json.next_stage\n} }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - System Update": {
+      "main": [
+        [
+          {
+            "node": "Get Current Pending Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current Pending Step": {
+      "main": [
+        [
+          {
+            "node": "Check Design Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Design Step": {
+      "main": [
+        [
+          {
+            "node": "Design Handler - Generate Canvas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Build Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Build Step": {
+      "main": [
+        [
+          {
+            "node": "Build Handler - Create Infrastructure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Automate Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Automate Step": {
+      "main": [
+        [
+          {
+            "node": "Automate Handler - Setup Triggers",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Review Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Review Step": {
+      "main": [
+        [
+          {
+            "node": "Review Handler - Schedule Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Design Handler - Generate Canvas": {
+      "main": [
+        [
+          {
+            "node": "Mark Step Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Handler - Create Infrastructure": {
+      "main": [
+        [
+          {
+            "node": "Mark Step Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Automate Handler - Setup Triggers": {
+      "main": [
+        [
+          {
+            "node": "Mark Step Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Handler - Schedule Review": {
+      "main": [
+        [
+          {
+            "node": "Mark Step Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Step Complete": {
+      "main": [
+        [
+          {
+            "node": "Update System Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update System Stage": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "tags": [],
+  "versionId": "1",
+  "meta": {},
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T15:57:49.%fZ",
+  "createdAt": "2025-10-30T15:57:49.%fZ"
+}

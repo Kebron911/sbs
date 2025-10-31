@@ -1,0 +1,201 @@
+{
+  "name": "SUBFLOW: Input Validation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "subflow-validate-input",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook_validate_input",
+      "name": "Webhook - Validate Input",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "subflow-validate-input"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "validation_rules",
+              "name": "validationRules",
+              "value": "={{ $json.body.validation_rules || [] }}",
+              "type": "array"
+            },
+            {
+              "id": "data",
+              "name": "data",
+              "value": "={{ $json.body.data || {} }}",
+              "type": "object"
+            },
+            {
+              "id": "validation_type",
+              "name": "validationType",
+              "value": "={{ $json.body.validation_type || 'basic' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare_validation_data",
+      "name": "Prepare Validation Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced Universal Input Validation Engine\nconst validationRules = $json.validationRules;\nconst data = $json.data;\nconst validationType = $json.validationType;\n\n// Enhanced pre-defined validation sets\nconst presetValidations = {\n  character_basic: [\n    { field: 'character_id', rules: [{ type: 'required' }, { type: 'custom', customCheck: 'character_id' }] }\n  ],\n  user_signup: [\n    { field: 'user_id', rules: [{ type: 'required' }, { type: 'custom', customCheck: 'user_id' }] },\n    { field: 'class', rules: [{ type: 'required' }, { type: 'type', expectedType: 'string' }] }\n  ],\n  routine_creation: [\n    { field: 'system_id', rules: [{ type: 'required' }, { type: 'type', expectedType: 'number' }] },\n    { field: 'routine_name', rules: [{ type: 'required' }, { type: 'type', expectedType: 'string' }] },\n    { field: 'day_of_week', rules: [{ type: 'required' }, { type: 'custom', customCheck: 'day_of_week' }] }\n  ],\n  admin_auth: [\n    { field: 'admin_key', rules: [{ type: 'required' }, { type: 'custom', customCheck: 'admin_key' }] }\n  ],\n  routine_update: [\n    { field: 'routine_id', rules: [{ type: 'required' }, { type: 'type', expectedType: 'number' }] }\n  ],\n  routine_completion: [\n    { field: 'routine_id', rules: [{ type: 'required' }, { type: 'type', expectedType: 'number' }] }\n  ],\n  system_creation: [\n    { field: 'user_id', rules: [{ type: 'required' }, { type: 'custom', customCheck: 'user_id' }] },\n    { field: 'system_name', rules: [{ type: 'required' }, { type: 'type', expectedType: 'string' }] },\n    { field: 'category', rules: [{ type: 'required' }, { type: 'custom', customCheck: 'system_category' }] }\n  ],\n  task_creation: [\n    { field: 'user_id', rules: [{ type: 'required' }, { type: 'custom', customCheck: 'user_id' }] },\n    { field: 'title', rules: [{ type: 'required' }, { type: 'type', expectedType: 'string' }] }\n  ],\n  skill_progression: [\n    { field: 'system_id', rules: [{ type: 'required' }, { type: 'type', expectedType: 'number' }] },\n    { field: 'progression_type', rules: [{ type: 'required' }, { type: 'custom', customCheck: 'progression_type' }] }\n  ]\n};\n\n// Use preset or custom validation rules\nlet finalValidationRules = validationRules;\nif (validationType !== 'custom' && presetValidations[validationType]) {\n  finalValidationRules = presetValidations[validationType];\n}\n\n// Perform enhanced validation\nconst errors = [];\nconst warnings = [];\n\nfor (const fieldRule of finalValidationRules) {\n  const fieldName = fieldRule.field;\n  const fieldValue = data[fieldName];\n  \n  for (const rule of fieldRule.rules) {\n    if (rule.type === 'required' && (fieldValue === null || fieldValue === undefined || fieldValue === '')) {\n      errors.push({ field: fieldName, message: `${fieldName} is required`, rule: 'required' });\n    }\n    \n    if (rule.type === 'custom' && rule.customCheck === 'character_id') {\n      if (!fieldValue || isNaN(parseInt(fieldValue)) || parseInt(fieldValue) <= 0) {\n        errors.push({ field: fieldName, message: 'character_id must be a positive integer', rule: 'custom' });\n      }\n    }\n    \n    if (rule.type === 'custom' && rule.customCheck === 'user_id') {\n      if (!fieldValue || isNaN(parseInt(fieldValue)) || parseInt(fieldValue) <= 0) {\n        errors.push({ field: fieldName, message: 'user_id must be a positive integer', rule: 'custom' });\n      }\n    }\n    \n    if (rule.type === 'custom' && rule.customCheck === 'day_of_week') {\n      const validDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'daily'];\n      if (!validDays.includes(fieldValue)) {\n        errors.push({ field: fieldName, message: 'day_of_week must be a valid day or daily', rule: 'custom' });\n      }\n    }\n    \n    if (rule.type === 'custom' && rule.customCheck === 'admin_key') {\n      if (!fieldValue || typeof fieldValue !== 'string' || fieldValue.length < 10) {\n        errors.push({ field: fieldName, message: 'Invalid admin key format', rule: 'custom' });\n      }\n    }\n    \n    if (rule.type === 'custom' && rule.customCheck === 'system_category') {\n      const validCategories = ['health', 'wealth', 'mindset', 'purpose', 'general'];\n      if (!validCategories.includes(fieldValue)) {\n        errors.push({ field: fieldName, message: 'category must be one of: ' + validCategories.join(', '), rule: 'custom' });\n      }\n    }\n    \n    if (rule.type === 'custom' && rule.customCheck === 'progression_type') {\n      const validTypes = ['stage_complete', 'routine_complete', 'milestone_reached'];\n      if (!validTypes.includes(fieldValue)) {\n        errors.push({ field: fieldName, message: 'progression_type must be one of: ' + validTypes.join(', '), rule: 'custom' });\n      }\n    }\n    \n    if (rule.type === 'type' && rule.expectedType === 'string' && typeof fieldValue !== 'string') {\n      errors.push({ field: fieldName, message: `${fieldName} must be a string`, rule: 'type' });\n    }\n    \n    if (rule.type === 'type' && rule.expectedType === 'number' && (isNaN(fieldValue) || typeof fieldValue !== 'number')) {\n      errors.push({ field: fieldName, message: `${fieldName} must be a number`, rule: 'type' });\n    }\n  }\n}\n\n// Check for unexpected fields (warnings)\nconst expectedFields = finalValidationRules.map(rule => rule.field);\nObject.keys(data).forEach(field => {\n  if (!expectedFields.includes(field)) {\n    warnings.push({ field: field, message: `Unexpected field: ${field}`, rule: 'unexpected' });\n  }\n});\n\n// Return enhanced validation result\nreturn {\n  json: {\n    valid: errors.length === 0,\n    errors: errors,\n    warnings: warnings,\n    validatedData: data,\n    validationType: validationType,\n    summary: {\n      totalFields: Object.keys(data).length,\n      errorCount: errors.length,\n      warningCount: warnings.length,\n      expectedFields: expectedFields.length\n    }\n  }\n};"
+      },
+      "id": "execute_validation",
+      "name": "Execute Validation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation_success",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check_validation_result",
+      "name": "Check Validation Result",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": true,\n  \"valid\": true,\n  \"data\": $json.validatedData,\n  \"summary\": $json.summary\n} }}",
+        "options": {}
+      },
+      "id": "send_validation_success",
+      "name": "Send Validation Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  \"success\": false,\n  \"valid\": false,\n  \"errors\": $json.errors,\n  \"message\": \"Validation failed: \" + $json.errors.map(e => e.message).join(', '),\n  \"summary\": $json.summary\n} }}",
+        "options": {
+          "responseCode": "400"
+        }
+      },
+      "id": "send_validation_error",
+      "name": "Send Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1050,
+        350
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Validation Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Validation Data": {
+      "main": [
+        [
+          {
+            "node": "Execute Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Validation": {
+      "main": [
+        [
+          {
+            "node": "Check Validation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation Result": {
+      "main": [
+        [
+          {
+            "node": "Send Validation Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Denver"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "subflow-validate-input",
+  "tags": [],
+  "pinData": {},
+  "staticData": null,
+  "triggerCount": 0,
+  "updatedAt": "2025-10-30T16:26:17.000Z",
+  "createdAt": "2025-10-30T16:26:17.000Z"
+}
